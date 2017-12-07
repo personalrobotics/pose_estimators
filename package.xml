@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>rcnn_pose</name>
+  <version>0.1.0</version>
+  <description>The pose estimation libararies with R-CNN</description>
+  <license>UNRELEASED</license>
+
+  <maintainer email="yskim@cs.uw.edu">Youngsun Kim</maintainer>
+  <author email="yskim@cs.uw.edu">Youngsun Kim</author>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>python</depend>
+
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <exec_depend>tensorflow</exec_depend>
+</package>
