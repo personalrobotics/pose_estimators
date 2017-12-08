@@ -171,7 +171,7 @@ if __name__ == '__main__':
     try:
         pub = rospy.Publisher('%s/marker_array' % title, MarkerArray,
                               queue_size=2)
-        rate = rospy.Rate(2)  # 2 hz
+        rate = rospy.Rate(1)  # 1 hz
 
         while not rospy.is_shutdown():
             update_timestamp_str = 'update: %s' % rospy.get_time()
@@ -185,7 +185,10 @@ if __name__ == '__main__':
                         item_dict[item[2]] += 1
                     else:
                         item_dict[item[2]] = 1
-                    item_dict[item[2]]
+ 
+                    if item[2] == 'person':
+                        continue
+
                     pose = Marker()
                     pose.header.frame_id = 'multisense/left_camera_optical_frame'
                     pose.header.stamp = rospy.Time.now()

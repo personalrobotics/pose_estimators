@@ -308,7 +308,6 @@ if __name__ == '__main__':
                         item_dict[item[2]] += 1
                     else:
                         item_dict[item[2]] = 1
-                    item_dict[item[2]]
                     pose = Marker()
                     pose.header.frame_id = 'multisense/left_camera_optical_frame'
                     pose.header.stamp = rospy.Time.now()
