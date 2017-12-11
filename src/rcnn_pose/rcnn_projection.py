@@ -90,6 +90,33 @@ class RcnnProjection:
         self.graph.as_default()
         self.sess = tf.Session(graph=self.graph, config=tf_config)
 
+    def get_box_coordinates(self, box, img_shape):
+        txmin = int(box[0] * img_shape[0])
+        tymin = int(box[1] * img_shape[1])
+        txmax = int(box[2] * img_shape[0])
+        tymax = int(box[3] * img_shape[1])
+        return txmin, tymin, txmax, tymax
+
+    def cleanup_detections(self, boxes, scores):
+        box_idx_list = list()
+        for box_idx in range(scores.shape[1]):
+            if scores[0][box_idx] < 0.5:
+                break
+            t_box = boxes[0][box_idx]
+            is_overlapped = False
+            for prev_idx in box_idx_list:
+                p_box = boxes[0][prev_idx]
+                if (abs(p_box[0] - t_box[0]) < 0.05
+                        and abs(p_box[1] - t_box[1]) < 0.05
+                        and abs(p_box[2] - t_box[2]) < 0.05
+                        and abs(p_box[3] - t_box[3]) < 0.05):
+                    is_overlapped = True
+                    break
+            if not is_overlapped:
+                box_idx_list.append(box_idx)
+
+        return box_idx_list
+
     def detect_objects(self):
         if self.img_msg is None:
             print('no input stream')
@@ -126,20 +153,17 @@ class RcnnProjection:
         cam_cx = camera_matrix[0, 2]
         cam_cy = camera_matrix[1, 2]
 
-        for box_idx in range(scores.shape[1]):
-            if scores[0][box_idx] < 0.5:
-                break
+        box_idx_list = self.cleanup_detections(boxes, scores)
+
+        for box_idx in box_idx_list:
             t_class = classes[0][box_idx]
             t_class_name = self.category_index[t_class]['name']
-            t_box = boxes[0][box_idx]
-            txmin = int(t_box[0] * img.shape[0])
-            tymin = int(t_box[1] * img.shape[1])
-            txmax = int(t_box[2] * img.shape[0])
-            tymax = int(t_box[3] * img.shape[1])
+            txmin, tymin, txmax, tymax = self.get_box_coordinates(
+                    boxes[0][box_idx], img.shape)
 
             pt = [txmax, (tymax + tymin) * 0.5]
             rvec = np.array([1.05, 0.0, 0.0])
-            z0 = 1.15
+            z0 = 1.11  # 1.175
             y0 = (z0 / cam_fy) * (pt[0] - cam_cy)
             tan_theta = np.tan(30 * np.pi / 180.)
             tan_alpha = -y0 / z0

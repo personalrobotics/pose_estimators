@@ -96,12 +96,12 @@ def convert_label_map_to_categories(label_map,
                    'label range.', item.id)
       continue
     if use_display_name and item.HasField('display_name'):
-      name = item.display_name
+      display_name = item.display_name
     else:
-      name = item.name
+      display_name = item.name
     if item.id not in list_of_ids_already_added:
       list_of_ids_already_added.append(item.id)
-      categories.append({'id': item.id, 'name': name})
+      categories.append({'id': item.id, 'name': item.name, 'display_name': display_name})
   return categories
 
 
