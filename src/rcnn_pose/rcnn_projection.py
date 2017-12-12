@@ -8,12 +8,15 @@ import rospy
 
 from visualization_msgs.msg import Marker, MarkerArray
 from sensor_msgs.msg import CompressedImage, Image
+from std_msgs.msg import Float32MultiArray
+
 from cv_bridge import CvBridge
 from scipy import misc
 from matplotlib import pyplot as plt
 
 from utils import label_map_util
 from utils import visualization_utils as vis_util
+from schunk_neck.srv import *
 
 
 class RcnnProjection:
@@ -33,16 +36,26 @@ class RcnnProjection:
         self.graph = None
         self.category_index = None
 
+        self.neck_service_name = '/schunk_neck/get_state'
+        self.neck_tilt = 30
+
         self.init_image_subscriber()
         self.pub_img = rospy.Publisher(
-            '%s/detection_image' % self.title,
-            Image, queue_size=2)
+                '%s/detection_image' % self.title,
+                Image,
+                queue_size=2)
         self.bridge = CvBridge()
+
+        self.pub_people = rospy.Publisher(
+                '%s/people_floatarray' % title,
+                Float32MultiArray,
+                queue_size=1)
+
 
     def init_image_subscriber(self):
         self.subscriber = rospy.Subscriber(
-            self.image_topic_name, CompressedImage,
-            self.sensor_image_callback, queue_size=1)
+                self.image_topic_name, CompressedImage,
+                self.sensor_image_callback, queue_size=1)
         print('subscribed to %s' % self.image_topic_name)
         # rospy.wait_for_message(self.image_topic_name, CompressedImage)
 
@@ -54,13 +67,13 @@ class RcnnProjection:
     def visualize_boxes(self, img, boxes, classes, scores, category_index):
         # Visualization of the results of a detection.
         vis_util.visualize_boxes_and_labels_on_image_array(
-            img,
-            np.squeeze(boxes),
-            np.squeeze(classes).astype(np.int32),
-            np.squeeze(scores),
-            category_index,
-            use_normalized_coordinates=True,
-            line_thickness=2)
+                img,
+                np.squeeze(boxes),
+                np.squeeze(classes).astype(np.int32),
+                np.squeeze(scores),
+                category_index,
+                use_normalized_coordinates=True,
+                line_thickness=2)
 
     def init_sess(self):
         ckpt_path = os.path.join(self.base_dir, 'demo_data/graph',
@@ -80,7 +93,7 @@ class RcnnProjection:
 
         label_map = label_map_util.load_labelmap(label_path)
         categories = label_map_util.convert_label_map_to_categories(
-            label_map, max_num_classes=num_classes, use_display_name=True)
+                label_map, max_num_classes=num_classes, use_display_name=True)
         self.category_index = label_map_util.create_category_index(categories)
 
         tf_config = tf.ConfigProto()
@@ -118,6 +131,16 @@ class RcnnProjection:
 
         return box_idx_list
 
+    def update_neck_states(self):
+        rospy.wait_for_service(self.neck_service_name)
+        try:
+            neck_states = rospy.ServiceProxy(
+                    self.neck_service_name, GetJointStates)
+            resp = neck_states()
+            return resp.pan, resp.tilt
+        except rospy.ServiceException, e:
+            print('service call failed: %s' % e)
+
     def detect_objects(self):
         if self.img_msg is None:
             print('no input stream')
@@ -137,9 +160,9 @@ class RcnnProjection:
         img = self.img_msg.copy()
         img_expanded = np.expand_dims(img, axis=0)
         (boxes, scores, classes, num) = self.sess.run(
-            [boxes, scores,
-             classes, num_detections],
-            feed_dict={image_tensor: img_expanded})
+                [boxes, scores,
+                 classes, num_detections],
+                feed_dict={image_tensor: img_expanded})
 
         img_vis = img.copy()
 
@@ -154,33 +177,46 @@ class RcnnProjection:
         cam_cx = camera_matrix[0, 2]
         cam_cy = camera_matrix[1, 2]
 
+        _, self.neck_tilt = self.update_neck_states()
+        neck_to_table = 0.578  # 0.5875
+        # when neck_tilt = 30, z0 = 1.175
+        z0 = neck_to_table / (np.cos(np.radians(90 - self.neck_tilt)) + 0.1 ** 10)
+        rvec = np.array([1.08, 0.0, 0.0])
+        tan_theta = np.tan(self.neck_tilt * np.pi / 180.)
+
         box_idx_list = self.cleanup_detections(boxes, scores)
+        people = list()
 
         for box_idx in box_idx_list:
             t_class = classes[0][box_idx]
             t_class_name = self.category_index[t_class]['name']
-            txmin, tymin, txmax, tymax = self.get_box_coordinates(
-                    boxes[0][box_idx], img.shape)
 
-            pt = [txmax, (tymax + tymin) * 0.5]
-            rvec = np.array([1.05, 0.0, 0.0])
-            z0 = 1.11  # 1.175
-            y0 = (z0 / cam_fy) * (pt[0] - cam_cy)
-            tan_theta = np.tan(30 * np.pi / 180.)
-            tan_alpha = -y0 / z0
-            tz = z0 - (y0 / (tan_theta - tan_alpha))
-            # ty = tan_theta * y0 / (tan_theta - tan_alpha) 
-            tx = (tz / cam_fx) * (pt[1] - cam_cx)
-            ty = (tz / cam_fy) * (pt[0] - cam_cy)
-            tvec = np.array([tx, ty, tz])
+            if (t_class_name.startswith('can_')
+                    and (self.neck_tilt > 5)
+                    and (z0 < 10)):
+                txmin, tymin, txmax, tymax = self.get_box_coordinates(
+                        boxes[0][box_idx], img.shape)
 
-            rst_vecs = [rvec, tvec, t_class_name, t_class]
+                pt = [txmax, (tymax + tymin) * 0.5]
+                y0 = (z0 / cam_fy) * (pt[0] - cam_cy)
+                tan_alpha = -y0 / z0
+                tz = z0 - (y0 / (tan_theta - tan_alpha))
+                tx = (tz / cam_fx) * (pt[1] - cam_cx)
+                ty = (tz / cam_fy) * (pt[0] - cam_cy)
+                tvec = np.array([tx, ty, tz])
 
-            if rst_vecs is not None:
+                rst_vecs = [rvec, tvec, t_class_name, t_class]
                 detections.append(rst_vecs)
+
+            elif t_class_name == 'person':
+                people.extend(boxes[0][box_idx])
         
-        msg = self.bridge.cv2_to_imgmsg(img_vis, "rgb8")
-        self.pub_img.publish(msg)
+        msg_img = self.bridge.cv2_to_imgmsg(img_vis, "rgb8")
+        self.pub_img.publish(msg_img)
+
+        msg_people = Float32MultiArray()
+        msg_people.data = people
+        self.pub_people.publish(msg_people)
 
         return detections
 
@@ -194,8 +230,11 @@ if __name__ == '__main__':
         image_topic_name='/multisense/left/image_rect_color/compressed')
 
     try:
-        pub = rospy.Publisher('%s/marker_array' % title, MarkerArray,
-                              queue_size=2)
+        pub_pose = rospy.Publisher(
+                '%s/marker_array' % title,
+                MarkerArray,
+                queue_size=2)
+        
         rate = rospy.Rate(1)  # 1 hz
 
         while not rospy.is_shutdown():
@@ -211,9 +250,6 @@ if __name__ == '__main__':
                     else:
                         item_dict[item[2]] = 1
  
-                    if item[2] == 'person':
-                        continue
-
                     pose = Marker()
                     pose.header.frame_id = 'multisense/left_camera_optical_frame'
                     pose.header.stamp = rospy.Time.now()
@@ -238,7 +274,7 @@ if __name__ == '__main__':
                     pose.lifetime = rospy.Duration(0)
                     poses.append(pose)
 
-            pub.publish(poses)
+            pub_pose.publish(poses)
 
             rospy.loginfo(update_timestamp_str)
             rate.sleep()
