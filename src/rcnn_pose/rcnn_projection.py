@@ -99,6 +99,7 @@ class RcnnProjection:
 
     def cleanup_detections(self, boxes, scores):
         box_idx_list = list()
+        threshold = 0.05
         for box_idx in range(scores.shape[1]):
             if scores[0][box_idx] < 0.5:
                 break
@@ -106,10 +107,10 @@ class RcnnProjection:
             is_overlapped = False
             for prev_idx in box_idx_list:
                 p_box = boxes[0][prev_idx]
-                if (abs(p_box[0] - t_box[0]) < 0.05
-                        and abs(p_box[1] - t_box[1]) < 0.05
-                        and abs(p_box[2] - t_box[2]) < 0.05
-                        and abs(p_box[3] - t_box[3]) < 0.05):
+                if (abs(p_box[0] - t_box[0]) < threshold
+                        and abs(p_box[1] - t_box[1]) < threshold
+                        and abs(p_box[2] - t_box[2]) < threshold
+                        and abs(p_box[3] - t_box[3]) < threshold):
                     is_overlapped = True
                     break
             if not is_overlapped:
