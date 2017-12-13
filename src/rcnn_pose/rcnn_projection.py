@@ -178,7 +178,7 @@ class RcnnProjection:
         cam_cy = camera_matrix[1, 2]
 
         _, self.neck_tilt = self.update_neck_states()
-        neck_to_table = 0.578  # 0.5875
+        neck_to_table = 0.575  # 0.5875
         # when neck_tilt = 30, z0 = 1.175
         z0 = neck_to_table / (np.cos(np.radians(90 - self.neck_tilt)) + 0.1 ** 10)
         rvec = np.array([1.08, 0.0, 0.0])
