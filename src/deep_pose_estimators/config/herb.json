@@ -1,0 +1,9 @@
+{
+    "image_topic": "/multisense/left/image_rect_color/compressed",
+    "camera_tf": "multisense/left_camera_optical_frame",
+
+    "base_data_dir": "~/data/rcnn/",
+
+    "node_title": "deep_pose",
+    "frequency": 1
+}

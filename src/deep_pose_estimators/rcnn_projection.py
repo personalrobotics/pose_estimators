@@ -27,7 +27,7 @@ class RcnnProjection:
             self.point3f_list = point3f_list
             self.descriptors = descriptors
 
-    def __init__(self, title='rcnn_pose', base_dir=None,
+    def __init__(self, title='RcnnProjection', base_dir=None,
                  image_topic_name=None):
         self.title = title
         self.base_dir = base_dir
@@ -226,7 +226,7 @@ class RcnnProjection:
 if __name__ == '__main__':
     title = 'deep_pose'
     rospy.init_node(title)
-    rcnn_demo = RcnnProjection(
+    rcnn_projection = RcnnProjection(
         title=title,
         base_dir=os.path.join(os.path.expanduser('~'), 'Data/rcnn'),
         image_topic_name='/multisense/left/image_rect_color/compressed')
@@ -241,7 +241,7 @@ if __name__ == '__main__':
 
         while not rospy.is_shutdown():
             update_timestamp_str = 'update: %s' % rospy.get_time()
-            rst = rcnn_demo.detect_objects()
+            rst = rcnn_projection.detect_objects()
 
             item_dict = dict()
             poses = list()
