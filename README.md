@@ -1,2 +1,2 @@
-# rcnn_pose
-Perception modules with R-CNN for HERB
+# deep_pose_estimators
+Perception modules with CNN based approaches for HERB
