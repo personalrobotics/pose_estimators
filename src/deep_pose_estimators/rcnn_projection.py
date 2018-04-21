@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from __future__ import division
+from __future__ import with_statement
 
 import numpy as np
 import os
@@ -28,10 +29,11 @@ class RcnnProjection:
             self.descriptors = descriptors
 
     def __init__(self, title='RcnnProjection', base_dir=None,
-                 image_topic_name=None):
+                 image_topic_name=None, msg_type='compressed'):
         self.title = title
         self.base_dir = base_dir
         self.image_topic_name = image_topic_name
+        self.msg_type = msg_type
 
         self.img_msg = None
         self.sess = None
@@ -53,18 +55,25 @@ class RcnnProjection:
                 Float32MultiArray,
                 queue_size=1)
 
-
     def init_image_subscriber(self):
-        self.subscriber = rospy.Subscriber(
-                self.image_topic_name, CompressedImage,
-                self.sensor_image_callback, queue_size=1)
+        if self.msg_type == 'compressed':
+            self.subscriber = rospy.Subscriber(
+                    self.image_topic_name, CompressedImage,
+                    self.sensor_compressed_image_callback, queue_size=1)
+        else:  # raw
+            self.subscriber = rospy.Subscriber(
+                    self.image_topic_name, Image,
+                    self.sensor_image_callback, queue_size=1)
         print('subscribed to %s' % self.image_topic_name)
         # rospy.wait_for_message(self.image_topic_name, CompressedImage)
 
-    def sensor_image_callback(self, ros_data):
+    def sensor_compressed_image_callback(self, ros_data):
         np_arr = np.fromstring(ros_data.data, np.uint8)
         self.img_msg = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
         self.img_msg = cv2.cvtColor(self.img_msg, cv2.COLOR_BGR2RGB)
+
+    def sensor_image_callback(self, ros_data):
+        self.img_msg = self.bridge.imgmsg_to_cv2(ros_data, 'rgb8')
 
     def visualize_boxes(self, img, boxes, classes, scores, category_index):
         # Visualization of the results of a detection.
@@ -100,7 +109,7 @@ class RcnnProjection:
 
         tf_config = tf.ConfigProto()
         tf_config.gpu_options.visible_device_list = '0'
-        tf_config.gpu_options.allow_growth = False
+        tf_config.gpu_options.allow_growth = True
 
         self.graph.as_default()
         self.sess = tf.Session(graph=self.graph, config=tf_config)
@@ -179,7 +188,8 @@ class RcnnProjection:
         cam_cx = camera_matrix[0, 2]
         cam_cy = camera_matrix[1, 2]
 
-        _, self.neck_tilt = self.update_neck_states()
+        # _, self.neck_tilt = self.update_neck_states()
+
         neck_to_table = 0.575  # 0.5875
         # when neck_tilt = 30, z0 = 1.175
         z0 = neck_to_table / (np.cos(np.radians(90 - self.neck_tilt)) + 0.1 ** 10)
@@ -193,9 +203,9 @@ class RcnnProjection:
             t_class = classes[0][box_idx]
             t_class_name = self.category_index[t_class]['name']
 
-            if (t_class_name.startswith('can_')
-                    and (self.neck_tilt > 5)
-                    and (z0 < 10)):
+            if (t_class_name.startswith('can_') and
+                    (self.neck_tilt > 5) and
+                    (z0 < 10)):
                 txmin, tymin, txmax, tymax = self.get_box_coordinates(
                         boxes[0][box_idx], img.shape)
 
@@ -223,21 +233,55 @@ class RcnnProjection:
         return detections
 
 
-if __name__ == '__main__':
-    title = 'deep_pose'
-    rospy.init_node(title)
+def print_usage(err_msg):
+    print(err_msg)
+    print('Usage:')
+    print('\t./rcnn_projection.py <config_filename (e.g. herb.json)>\n')
+
+
+def load_configs():
+    import sys
+    args = sys.argv
+
+    config_filename = 'herb.json'
+    if len(args) == 2:
+        config_filename = args[1]
+    else:
+        print_usage('Invalid arguments')
+        return None
+
+    try:
+        with open(os.path.join('config', config_filename), 'r') as f:
+            import simplejson
+            from easydict import EasyDict
+            config = EasyDict(simplejson.loads(f.read()))
+            config.base_data_dir = os.path.expanduser(config.base_data_dir)
+            return config
+    except EnvironmentError:
+        print_usage('Cannot find config file')
+
+    return None
+
+
+def run_detection():
+    config = load_configs()
+    if config is None:
+        return
+
+    rospy.init_node(config.node_title)
     rcnn_projection = RcnnProjection(
-        title=title,
-        base_dir=os.path.join(os.path.expanduser('~'), 'Data/rcnn'),
-        image_topic_name='/multisense/left/image_rect_color/compressed')
+        title=config.node_title,
+        base_dir=config.base_data_dir,
+        image_topic_name=config.image_topic,
+        msg_type=config.msg_type)
 
     try:
         pub_pose = rospy.Publisher(
-                '%s/marker_array' % title,
+                '%s/marker_array' % config.node_title,
                 MarkerArray,
-                queue_size=2)
+                queue_size=1)
 
-        rate = rospy.Rate(1)  # 1 hz
+        rate = rospy.Rate(config.frequency)  # 1 hz
 
         while not rospy.is_shutdown():
             update_timestamp_str = 'update: %s' % rospy.get_time()
@@ -253,7 +297,7 @@ if __name__ == '__main__':
                         item_dict[item[2]] = 1
 
                     pose = Marker()
-                    pose.header.frame_id = 'multisense/left_camera_optical_frame'
+                    pose.header.frame_id = config.camera_tf
                     pose.header.stamp = rospy.Time.now()
                     pose.id = item[3]
                     pose.text = item[2]
@@ -283,3 +327,7 @@ if __name__ == '__main__':
 
     except rospy.ROSInterruptException:
         pass
+
+
+if __name__ == '__main__':
+    run_detection()
