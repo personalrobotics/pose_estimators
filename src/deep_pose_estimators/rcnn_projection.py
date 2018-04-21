@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+from __future__ import division
+
 import numpy as np
 import os
 import tensorflow as tf
@@ -169,7 +171,7 @@ class RcnnProjection:
         self.visualize_boxes(img_vis, boxes, classes, scores,
                              self.category_index)
 
-        camera_matrix = np.array([[574.1943359375, 0.0, 507.0], 
+        camera_matrix = np.array([[574.1943359375, 0.0, 507.0],
                                   [0.0, 574.1943359375, 278.0],
                                   [0.0, 0.0, 1.0]], dtype='double')
         cam_fx = camera_matrix[0, 0]
@@ -210,7 +212,7 @@ class RcnnProjection:
 
             elif t_class_name == 'person':
                 people.extend(boxes[0][box_idx])
-        
+
         msg_img = self.bridge.cv2_to_imgmsg(img_vis, "rgb8")
         self.pub_img.publish(msg_img)
 
@@ -222,7 +224,7 @@ class RcnnProjection:
 
 
 if __name__ == '__main__':
-    title = 'rcnn_demo'
+    title = 'deep_pose'
     rospy.init_node(title)
     rcnn_demo = RcnnProjection(
         title=title,
@@ -234,7 +236,7 @@ if __name__ == '__main__':
                 '%s/marker_array' % title,
                 MarkerArray,
                 queue_size=2)
-        
+
         rate = rospy.Rate(1)  # 1 hz
 
         while not rospy.is_shutdown():
@@ -249,7 +251,7 @@ if __name__ == '__main__':
                         item_dict[item[2]] += 1
                     else:
                         item_dict[item[2]] = 1
- 
+
                     pose = Marker()
                     pose.header.frame_id = 'multisense/left_camera_optical_frame'
                     pose.header.stamp = rospy.Time.now()
@@ -281,5 +283,3 @@ if __name__ == '__main__':
 
     except rospy.ROSInterruptException:
         pass
-
-# End of script

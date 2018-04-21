@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+from __future__ import division
+
 import numpy as np
 import os
 import tensorflow as tf
@@ -13,29 +15,30 @@ from scipy import misc
 from matplotlib import pyplot as plt
 
 from utils import label_map_util
-from utils import visualization_utils as vis_coco
+from utils import visualization_utils as vis_util
 
 
-class RcnnCoco:
+class RcnnMoped:
     class Model:
         def __init__(self, point3f_list, descriptors):
             self.point3f_list = point3f_list
             self.descriptors = descriptors
 
-    def __init__(self, title='rcnn_pose', base_dir=None,
+    def __init__(self, title='rcnn_moped', base_dir=None,
                  image_topic_name=None):
         self.title = title
         self.base_dir = base_dir
         self.image_topic_name = image_topic_name
 
         self.img_msg = None
+        self.models = None
         self.sess = None
         self.graph = None
         self.category_index = None
 
         self.init_image_subscriber()
         self.pub_img = rospy.Publisher(
-            '%s/detection_image' % self.title,
+            'rcnn_moped/detection_image',
             Image, queue_size=2)
         self.bridge = CvBridge()
 
@@ -51,6 +54,46 @@ class RcnnCoco:
         self.img_msg = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
         self.img_msg = cv2.cvtColor(self.img_msg, cv2.COLOR_BGR2RGB)
 
+    def load_models(self):
+        models = dict()
+        for filename in os.listdir(os.path.join(self.base_dir, 'db/can')):
+            filepath = os.path.join(self.base_dir, 'db/can', filename)
+            if os.path.isfile(filepath):
+                print(filepath)
+                fs = cv2.FileStorage(filepath, cv2.FILE_STORAGE_READ)
+                new_model = self.Model(fs.getNode('points_3d').mat(),
+                                       fs.getNode('descriptors').mat())
+                models[filename[:-4]] = new_model
+        return models
+
+    def get_feature_points(self, img, alg='SIFT', num_key_points=300):
+        if alg == 'SURF':
+            surf = cv2.xfeatures2d.SURF_create(num_key_points)
+            kp, des = surf.detectAndCompute(img, None)
+        else:  # alg == 'SIFT'
+            sift = cv2.xfeatures2d.SIFT_create(num_key_points)
+            kp, des = sift.detectAndCompute(img, None)
+        # rst = cv2.drawKeypoints(img, kp, None)
+        return kp, des
+
+    def get_knn_matches(self, des1, des2,
+                        trees=5, checks=128, threshold=0.78):
+        FLANN_INDEX_KDTREE = 1
+        index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=trees)
+        search_params = dict(checks=checks)
+
+        flann = cv2.FlannBasedMatcher(index_params, search_params)
+
+        matches = flann.knnMatch(des1, des2, k=2)
+
+        matchesMask = [[0, 0] for i in range(len(matches))]
+
+        for i, (m, n) in enumerate(matches):
+            if m.distance < threshold * n.distance:
+                matchesMask[i] = [1, 0]
+
+        return matches, matchesMask
+
     def visualize_boxes(self, img, boxes, classes, scores, category_index):
         # Visualization of the results of a detection.
         vis_util.visualize_boxes_and_labels_on_image_array(
@@ -62,13 +105,111 @@ class RcnnCoco:
             use_normalized_coordinates=True,
             line_thickness=2)
 
+    def estimate_pose(self, img, mask, class_name, class_idx,
+                      img_vis=None, visualize=False):
+        rvec = np.array([1.0, 0.0, 0.0])
+        tvec = np.array([0.0, 1.0, -1.0])
+
+        return [rvec, tvec, class_name, class_idx]
+
+        if class_name not in self.models:
+            print('invalid class name: %s' % class_name)
+            return
+
+        model = self.models[class_name]
+
+        num_key_points = 500
+        threshold = 0.82
+        camera_matrix = np.array([[574.1943359375, 0.0, 507.0],
+                                  [0.0, 574.1943359375, 278.0],
+                                  [0.0, 0.0, 1.0]], dtype='double')
+        dist_coeffs = np.zeros((4, 1))
+        iterations_count = 500
+        reprojection_error = 2.0
+        confidence = 0.95
+        pnp_algorithm = cv2.SOLVEPNP_DLS
+
+        # SIFT features
+        img_kp, img_des = self.get_feature_points(
+            img * mask, num_key_points=num_key_points)
+
+        # print(len(img_kp), class_name)
+
+        # knn match
+        index_params = dict(algorithm=1, trees=3)
+        search_params = dict(checks=128)
+        flann = cv2.FlannBasedMatcher(index_params, search_params)
+
+        this_matches = flann.knnMatch(img_des, model.descriptors, k=2)
+        # print(len(this_matches))
+
+        matched_p3d = list()
+        matched_p2d = list()
+        for i, (m, n) in enumerate(this_matches):
+            if m.distance < threshold * n.distance:
+                matched_p3d.append(model.point3f_list[m.trainIdx])
+                matched_p2d.append(img_kp[m.queryIdx].pt)
+        matched_p3d = np.asarray(matched_p3d)
+        matched_p2d = np.asarray(matched_p2d)
+
+        # print(len(matched_p3d))
+        if len(matched_p3d) < 6:
+            print('not enough matches: %d' % len(matched_p3d))
+            return
+
+        # PnPRANSAC
+        (success, rvec, tvec, inliers) = cv2.solvePnPRansac(
+            matched_p3d, matched_p2d,
+            camera_matrix, dist_coeffs,
+            iterationsCount=iterations_count,
+            reprojectionError=reprojection_error,
+            confidence=confidence,
+            flags=pnp_algorithm)
+        if not success:
+            print('pnpransac failed')
+            return
+
+        if visualize:
+            points = np.array(
+                [[0, 0, 0], [3, 0, 0], [0, 3, 0], [0, 0, 3],
+                 [-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1],
+                 [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]],
+                dtype=np.float)
+            points = points * 0.06
+            points, _ = cv2.projectPoints(points, rvec, tvec, camera_matrix,
+                                          dist_coeffs)
+
+            p = list()
+            for pidx in range(len(points)):
+                p.append((int(points[pidx][0][0]),
+                          int(points[pidx][0][1])))
+
+            cv2.line(img_vis, p[4], p[5], (0, 255, 200), 1)
+            cv2.line(img_vis, p[5], p[6], (0, 255, 200), 1)
+            cv2.line(img_vis, p[6], p[7], (0, 255, 200), 1)
+            cv2.line(img_vis, p[7], p[4], (0, 255, 200), 1)
+            cv2.line(img_vis, p[8], p[9], (0, 255, 200), 1)
+            cv2.line(img_vis, p[9], p[10], (0, 255, 200), 1)
+            cv2.line(img_vis, p[10], p[11], (0, 255, 200), 1)
+            cv2.line(img_vis, p[11], p[8], (0, 255, 200), 1)
+            cv2.line(img_vis, p[4], p[8], (0, 255, 200), 1)
+            cv2.line(img_vis, p[5], p[9], (0, 255, 200), 1)
+            cv2.line(img_vis, p[6], p[10], (0, 255, 200), 1)
+            cv2.line(img_vis, p[7], p[11], (0, 255, 200), 1)
+
+            cv2.line(img_vis, p[0], p[1], (255, 0, 0), 2)
+            cv2.line(img_vis, p[0], p[2], (0, 255, 0), 2)
+            cv2.line(img_vis, p[0], p[3], (0, 0, 255), 2)
+
+        return [rvec, tvec, class_name, class_idx]
+
     def init_sess(self):
         ckpt_path = os.path.join(self.base_dir, 'demo_data/graph',
                                  'frozen_inference_graph.pb')
         label_path = os.path.join(self.base_dir, 'demo_data/data',
                                   'demo_label_map.pbtxt')
 
-        num_classes = 1
+        num_classes = 10
 
         self.graph = tf.Graph()
         with self.graph.as_default():
@@ -95,6 +236,9 @@ class RcnnCoco:
             print('no input stream')
             return
 
+        if self.models is None:
+            self.models = self.load_models()
+
         if self.sess is None:
             self.init_sess()
 
@@ -118,14 +262,6 @@ class RcnnCoco:
         self.visualize_boxes(img_vis, boxes, classes, scores,
                              self.category_index)
 
-        camera_matrix = np.array([[574.1943359375, 0.0, 507.0], 
-                                  [0.0, 574.1943359375, 278.0],
-                                  [0.0, 0.0, 1.0]], dtype='double')
-        cam_fx = camera_matrix[0, 0]
-        cam_fy = camera_matrix[1, 1]
-        cam_cx = camera_matrix[0, 2]
-        cam_cy = camera_matrix[1, 2]
-
         for box_idx in range(scores.shape[1]):
             if scores[0][box_idx] < 0.5:
                 break
@@ -137,23 +273,15 @@ class RcnnCoco:
             txmax = int(t_box[2] * img.shape[0])
             tymax = int(t_box[3] * img.shape[1])
 
-            pt = [txmax, (tymax + tymin) * 0.5]
-            rvec = np.array([1.05, 0.0, 0.0])
-            z0 = 1.15
-            y0 = (z0 / cam_fy) * (pt[0] - cam_cy)
-            tan_theta = np.tan(30 * np.pi / 180.)
-            tan_alpha = -y0 / z0
-            tz = z0 - (y0 / (tan_theta - tan_alpha))
-            # ty = tan_theta * y0 / (tan_theta - tan_alpha) 
-            tx = (tz / cam_fx) * (pt[1] - cam_cx)
-            ty = (tz / cam_fy) * (pt[0] - cam_cy)
-            tvec = np.array([tx, ty, tz])
-
-            rst_vecs = [rvec, tvec, t_class_name, t_class]
+            mask = np.zeros_like(img)
+            mask[txmin:txmax, tymin:tymax, :] = 1
+            rst_vecs = self.estimate_pose(
+                img, mask, t_class_name, t_class,
+                img_vis=img_vis, visualize=True)
 
             if rst_vecs is not None:
                 detections.append(rst_vecs)
-        
+
         msg = self.bridge.cv2_to_imgmsg(img_vis, "rgb8")
         self.pub_img.publish(msg)
 
@@ -161,21 +289,19 @@ class RcnnCoco:
 
 
 if __name__ == '__main__':
-    title = 'rcnn_coco'
-    rospy.init_node(title)
-    rcnn_demo = RcnnCoco(
-        title=title,
+    rospy.init_node('rcnn_moped')
+    rcnn_moped = RcnnMoped(
         base_dir=os.path.join(os.path.expanduser('~'), 'Data/rcnn'),
         image_topic_name='/multisense/left/image_rect_color/compressed')
 
     try:
-        pub = rospy.Publisher('%s/marker_array' % title, MarkerArray,
+        pub = rospy.Publisher('rcnn_moped/marker_array', MarkerArray,
                               queue_size=2)
         rate = rospy.Rate(2)  # 2 hz
 
         while not rospy.is_shutdown():
             update_timestamp_str = 'update: %s' % rospy.get_time()
-            rst = rcnn_demo.detect_objects()
+            rst = rcnn_moped.detect_objects()
 
             item_dict = dict()
             poses = list()
@@ -216,5 +342,3 @@ if __name__ == '__main__':
 
     except rospy.ROSInterruptException:
         pass
-
-# End of script
