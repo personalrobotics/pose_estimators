@@ -2,7 +2,7 @@
 <package format="2">
   <name>deep_pose_estimators</name>
   <version>0.1.0</version>
-  <description>The pose estimation libararies with CNN based approaches for HERB</description>
+  <description>The pose estimation libararies with CNN based approaches for PRL robots</description>
   <license>UNRELEASED</license>
 
   <maintainer email="yskim@cs.uw.edu">Youngsun Kim</maintainer>

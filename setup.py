@@ -5,7 +5,7 @@ from catkin_pkg.python_setup import generate_distutils_setup
 
 d = generate_distutils_setup(
     packages=[
-        'rcnn_pose'
+        'deep_pose_estimators'
     ],
     package_dir={'': 'src'},
 )

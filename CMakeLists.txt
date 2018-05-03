@@ -7,7 +7,6 @@ catkin_python_setup()
 
 install(
     PROGRAMS
-        rcnn_moped.py
         rcnn_projection.py
     DESTINATION
         "${CATKIN_PACKAGE_BIN_DESTINATION}"
