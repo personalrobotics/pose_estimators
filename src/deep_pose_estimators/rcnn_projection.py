@@ -243,10 +243,15 @@ def load_configs():
     import sys
     args = sys.argv
 
-    config_filename = 'herb.json'
+    config_filename = None
     if len(args) == 2:
         config_filename = args[1]
     else:
+        ros_param_name = '/pose_estimator/config_filename'
+        if rospy.has_param(ros_param_name):
+            config_filename = rospy.get_param(ros_param_name)
+
+    if config_filename is None:
         print_usage('Invalid arguments')
         return None
 
