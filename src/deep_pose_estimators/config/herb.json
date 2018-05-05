@@ -6,5 +6,5 @@
     "base_data_dir": "~/Data/rcnn/",
 
     "node_title": "deep_pose",
-    "frequency": 1
+    "frequency": 3
 }
