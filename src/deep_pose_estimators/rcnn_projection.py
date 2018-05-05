@@ -192,7 +192,8 @@ class RcnnProjection:
 
         neck_to_table = 0.575  # 0.5875
         # when neck_tilt = 30, z0 = 1.175
-        z0 = neck_to_table / (np.cos(np.radians(90 - self.neck_tilt)) + 0.1 ** 10)
+        z0 = (neck_to_table /
+              (np.cos(np.radians(90 - self.neck_tilt)) + 0.1 ** 10))
         rvec = np.array([1.08, 0.0, 0.0])
         tan_theta = np.tan(self.neck_tilt * np.pi / 180.)
 
@@ -243,15 +244,28 @@ def load_configs():
     import sys
     args = sys.argv
 
-    config_filename = 'herb.json'
+    config_filename = None
     if len(args) == 2:
         config_filename = args[1]
     else:
+        ros_param_name = '/pose_estimator/config_filename'
+        if rospy.has_param(ros_param_name):
+            config_filename = rospy.get_param(ros_param_name)
+
+    if config_filename is None:
         print_usage('Invalid arguments')
         return None
 
+    import rospkg
+    rospack = rospkg.RosPack()
+    pkg_base = rospack.get_path('deep_pose_estimators')
+
+    config_filepath = os.path.join(
+        pkg_base, 'src/deep_pose_estimators/config', config_filename)
+    print('config with: {}'.format(config_filepath))
+
     try:
-        with open(os.path.join('config', config_filename), 'r') as f:
+        with open(config_filepath, 'r') as f:
             import simplejson
             from easydict import EasyDict
             config = EasyDict(simplejson.loads(f.read()))
