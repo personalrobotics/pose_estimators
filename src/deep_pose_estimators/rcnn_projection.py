@@ -247,11 +247,20 @@ def load_configs():
     if len(args) == 2:
         config_filename = args[1]
     else:
-        print_usage('Invalid arguments')
-        return None
+        config_filename = rospy.get_param('/pose_estimator/config_filename')
+        if config_filename is None:
+            print_usage('Invalid arguments')
+            return None
+
+    import rospkg
+    rospack = rospkg.RosPack()
+    pkg_base = rospack.get_path('deep_pose_estimators')
+    
+    config_filepath = os.path.join(pkg_base, 'src/deep_pose_estimators/config', config_filename)
+    print('config with: {}'.format(config_filepath))
 
     try:
-        with open(os.path.join('config', config_filename), 'r') as f:
+        with open(config_filepath, 'r') as f:
             import simplejson
             from easydict import EasyDict
             config = EasyDict(simplejson.loads(f.read()))
