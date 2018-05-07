@@ -1,10 +1,16 @@
 from __future__ import division
 
 import numpy as np
+import os
+import itertools
+from collections import OrderedDict
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd import Variable
+
+from vgg import VGG16   # VGG16 as backbone
 
 
 class L2Norm(nn.Module):

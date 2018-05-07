@@ -20,7 +20,7 @@ def _softmax_cross_entropy_with_logits(x, t):
 
 class MultiBoxLoss(nn.Module):
     def __init__(self):
-        super().__init__()
+        super(MultiBoxLoss, self).__init__()
 
     def _hard_negative_mining(self, loss, pos, neg, k):
         loss = loss.detach()

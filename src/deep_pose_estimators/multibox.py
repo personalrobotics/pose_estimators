@@ -1,6 +1,9 @@
 import numpy as np
 import torch
 
+import itertools
+from numbers import Number
+
 import utils.cython_nms as cython_nms
 
 
@@ -99,50 +102,65 @@ class MultiBox(object):
         return boxes[chosen], scores.argmax(axis=1)[chosen], scores.max(axis=1)[chosen]
 
 
-# def nms(boxes, scores, nms_thresh=0.45, conf_thresh=0, topk=400, topk_after=50):
-#     Keep = np.zeros(len(scores), dtype=bool)
-#     idx =  (scores >= conf_thresh) & ((-scores).argsort().argsort() < topk)
-#     if idx.sum() == 0:
-#         return Keep
+def batch_iou(a, b):
+    # pairwise jaccard botween boxes a and boxes b
+    # box: [left, top, right, bottom]
+    lt = np.maximum(a[:, np.newaxis, :2], b[:, :2])
+    rb = np.minimum(a[:, np.newaxis, 2:], b[:, 2:])
+    inter = np.clip(rb - lt, 0, None)
 
-#     boxes = boxes[idx]
-#     scores = scores[idx]
+    area_i = np.prod(inter, axis=2)
+    area_a = np.prod(a[:, 2:] - a[:, :2], axis=1)
+    area_b = np.prod(b[:, 2:] - b[:, :2], axis=1)
 
-#     iou = batch_iou(boxes, boxes)
-#     keep = np.zeros(len(scores), dtype=bool)
-#     keep[scores.argmax()] = True
-#     for i in scores.argsort()[::-1]:
-#         if (iou[i, keep] < nms_thresh).all():
-#             keep[i] = True
-#             #if keep.sum() >= topk_after:
-#             #    break
-
-#     Keep[idx] = keep
-#     return Keep
+    area_u = area_a[:, np.newaxis] + area_b - area_i
+    return area_i / np.clip(area_u, 1e-7, None)  # shape: (len(a) x len(b))
 
 
-def nms(dets, thresh):
-    """Apply classic DPM-style greedy NMS."""
-    if dets.shape[0] == 0:
-        return []
-    return cython_nms.nms(dets, thresh)
+def nms(boxes, scores, nms_thresh=0.45, conf_thresh=0, topk=400, topk_after=50):
+    Keep = np.zeros(len(scores), dtype=bool)
+    idx = (scores >= conf_thresh) & ((-scores).argsort().argsort() < topk)
+    if idx.sum() == 0:
+        return Keep
+
+    boxes = boxes[idx]
+    scores = scores[idx]
+
+    iou = batch_iou(boxes, boxes)
+    keep = np.zeros(len(scores), dtype=bool)
+    keep[scores.argmax()] = True
+    for i in scores.argsort()[::-1]:
+        if (iou[i, keep] < nms_thresh).all():
+            keep[i] = True
+            # if keep.sum() >= topk_after:
+            #    break
+
+    Keep[idx] = keep
+    return Keep
 
 
-def soft_nms(
-    dets, sigma=0.5, overlap_thresh=0.3, score_thresh=0.001, method='linear'
-):
-    """Apply the soft NMS algorithm from https://arxiv.org/abs/1704.04503."""
-    if dets.shape[0] == 0:
-        return dets, []
+# def nms(dets, thresh):
+#     """Apply classic DPM-style greedy NMS."""
+#     if dets.shape[0] == 0:
+#         return []
+#     return cython_nms.nms(dets, thresh)
 
-    methods = {'hard': 0, 'linear': 1, 'gaussian': 2}
-    assert method in methods, 'Unknown soft_nms method: {}'.format(method)
 
-    dets, keep = cython_nms.soft_nms(
-        np.ascontiguousarray(dets, dtype=np.float32),
-        np.float32(sigma),
-        np.float32(overlap_thresh),
-        np.float32(score_thresh),
-        np.uint8(methods[method])
-    )
-    return dets, keep
+# def soft_nms(
+#     dets, sigma=0.5, overlap_thresh=0.3, score_thresh=0.001, method='linear'
+# ):
+#     """Apply the soft NMS algorithm from https://arxiv.org/abs/1704.04503."""
+#     if dets.shape[0] == 0:
+#         return dets, []
+
+#     methods = {'hard': 0, 'linear': 1, 'gaussian': 2}
+#     assert method in methods, 'Unknown soft_nms method: {}'.format(method)
+
+#     dets, keep = cython_nms.soft_nms(
+#         np.ascontiguousarray(dets, dtype=np.float32),
+#         np.float32(sigma),
+#         np.float32(overlap_thresh),
+#         np.float32(score_thresh),
+#         np.uint8(methods[method])
+#     )
+#     return dets, keep

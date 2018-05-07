@@ -139,7 +139,7 @@ class VOCDetection(torch.utils.data.Dataset):
                     for line in f:
                         self.ids.append((basepath, line.strip()[:-3]))
 
-        self.ids = sorted(list(set(self.ids)), key=lambda :_[0]+_[1])  # deterministic
+        self.ids = sorted(list(set(self.ids)), key=lambda _:_[0]+_[1])  # deterministic
 
     def __getitem__(self, index):
         img_id = self.ids[index]

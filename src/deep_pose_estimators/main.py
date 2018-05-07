@@ -8,10 +8,10 @@ import numpy as np
 from numpy.random import RandomState
 import cv2
 
-
 import torch
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
+import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 
 import transforms as trans
@@ -25,7 +25,10 @@ from multibox import MultiBox
 
 import sys
 sys.path.append('./models')
-from SSD import SSD300
+from ssd import SSD300  # noqa
+
+
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 
 summary = SummaryWriter()
@@ -108,17 +111,17 @@ def train():
     PRNG = RandomState(opt.seed)
 
     # augmentation / transforms
-    transform = Compose([
-        [ColorJitter(prob=0.5)],  # or write [ColorJitter(), None]
-        BoxesToCoords(),
-        Expand((1, 4), prob=0.5),
-        ObjectRandomCrop(),
-        HorizontalFlip(),
-        Resize(300),
-        CoordsToBoxes(),
-        [SubtractMean(mean=VOC.MEAN)],
-        [RGB2BGR()],
-        [ToTensor()],
+    transform = trans.Compose([
+        [trans.ColorJitter(prob=0.5)],  # or write [ColorJitter(), None]
+        trans.BoxesToCoords(),
+        trans.Expand((1, 4), prob=0.5),
+        trans.ObjectRandomCrop(),
+        trans.HorizontalFlip(),
+        trans.Resize(300),
+        trans.CoordsToBoxes(),
+        [trans.SubtractMean(mean=VOC.MEAN)],
+        [trans.RGB2BGR()],
+        [trans.ToTensor()],
         ], PRNG, mode=None, fillval=VOC.MEAN)
     target_transform = encoder.encode
 
@@ -134,14 +137,14 @@ def train():
 
     iteration = opt.start_iter
     while True:
-        for input, loc, label in dataloader:
+        for inp, loc, label in dataloader:
             learning_rate_schedule(iteration)
 
-            input, loc, label = Variable(input), Variable(loc), Variable(label)
+            # inp, loc, label = Variable(inp), Variable(loc), Variable(label)
             if opt.cuda:
-                input, loc, label = input.cuda(), loc.cuda(), label.cuda()
+                inp, loc, label = inp.cuda(), loc.cuda(), label.cuda()
 
-            xloc, xconf = model(input)
+            xloc, xconf = model(inp)
             loc_loss, conf_loss = criterion(xloc, xconf, loc, label)
             loss = loc_loss + conf_loss
 
@@ -201,11 +204,11 @@ def test():
         gt_bboxes.append(loc)
         gt_labels.append(label)
 
-        input = Variable(img.unsqueeze(0), volatile=True)
+        inp = Variable(img.unsqueeze(0), volatile=True)
         if opt.cuda:
-            input = input.cuda()
+            inp = inp.cuda()
 
-        xloc, xconf = model(input)
+        xloc, xconf = model(inp)
         xloc = xloc.data.cpu().numpy()[0]
         xconf = xconf.data.cpu().numpy()[0]
 
@@ -242,13 +245,13 @@ def demo():
     for _ in range(1000):
         img, _, _ = dataset[i]
 
-        input = Variable(img.unsqueeze(0), volatile=True)
+        inp = Variable(img.unsqueeze(0), volatile=True)
         if opt.cuda:
-            input = input.cuda()
+            inp = inp.cuda()
 
-        xloc, xconf = model(input)
+        xloc, xconf = model(inp)
 
-        imgs = input.data.cpu().numpy().transpose(0, 2, 3, 1)
+        imgs = inp.data.cpu().numpy().transpose(0, 2, 3, 1)
         xloc = xloc.data.cpu().numpy()
         xconf = xconf.data.cpu().numpy()
 
