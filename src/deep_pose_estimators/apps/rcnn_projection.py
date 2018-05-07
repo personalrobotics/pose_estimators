@@ -22,6 +22,10 @@ from utils import visualization_utils as vis_util
 from schunk_neck.srv import *
 
 
+# An application for the soda-handoff demo
+# Based on any models that are trained by the implementations
+# for object detections in https://github.com/yskim041/models.git
+# (forked from https://github.com/tensorflow/models.git)
 class RcnnProjection:
     class Model:
         def __init__(self, point3f_list, descriptors):
