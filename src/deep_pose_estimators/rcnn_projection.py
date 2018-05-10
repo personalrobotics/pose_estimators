@@ -8,10 +8,12 @@ import os
 import tensorflow as tf
 import cv2
 import rospy
+import Math.isclose
 
 from visualization_msgs.msg import Marker, MarkerArray
 from sensor_msgs.msg import CompressedImage, Image
 from std_msgs.msg import Float32MultiArray
+from geometry_msgs.msg import Point
 
 from cv_bridge import CvBridge
 from scipy import misc
@@ -152,7 +154,7 @@ class RcnnProjection:
         except rospy.ServiceException, e:
             print('service call failed: %s' % e)
 
-    def detect_objects(self):
+    def detect_objects(self, target_coords):
         if self.img_msg is None:
             print('no input stream')
             return
@@ -217,6 +219,8 @@ class RcnnProjection:
                 tx = (tz / cam_fx) * (pt[1] - cam_cx)
                 ty = (tz / cam_fy) * (pt[0] - cam_cy)
                 tvec = np.array([tx, ty, tz])
+                if (target_coords is not None and isclose(target_coords.x, tx, rel_tol=.05) and isclose(target_coords.y, ty, rel_tol=.05) and isclose(target_coords.z, tz, rel_tol=.05):
+                    cv2.line(img_vis, (txmin, tymin), (txmax, tymax), 2) 
 
                 rst_vecs = [rvec, tvec, t_class_name, t_class]
                 detections.append(rst_vecs)
@@ -277,6 +281,18 @@ def load_configs():
     return None
 
 
+class target_object_listener:
+    target_coords = None
+
+    def listener():
+        rospy.init_node('listener', anonymous=True)
+        rospy.Subscriber('/alexa_target', Point, callback)
+        rospy.spin()
+
+    def callback(data):
+        target_coords = data
+        
+        
 def run_detection():
     config = load_configs()
     if config is None:
@@ -296,10 +312,11 @@ def run_detection():
                 queue_size=1)
 
         rate = rospy.Rate(config.frequency)  # 1 hz
+        target_object_listener.listener()
 
         while not rospy.is_shutdown():
             update_timestamp_str = 'update: %s' % rospy.get_time()
-            rst = rcnn_projection.detect_objects()
+            rst = rcnn_projection.detect_objects(target_object_listener.target_coords)
 
             item_dict = dict()
             poses = list()
