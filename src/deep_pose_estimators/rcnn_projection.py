@@ -1,5 +1,4 @@
-#!/usr/bin/env python
-
+#!/usr/bin/env python 
 from __future__ import division
 from __future__ import with_statement
 
@@ -8,7 +7,7 @@ import os
 import tensorflow as tf
 import cv2
 import rospy
-import Math.isclose
+import math
 
 from visualization_msgs.msg import Marker, MarkerArray
 from sensor_msgs.msg import CompressedImage, Image
@@ -219,8 +218,14 @@ class RcnnProjection:
                 tx = (tz / cam_fx) * (pt[1] - cam_cx)
                 ty = (tz / cam_fy) * (pt[0] - cam_cy)
                 tvec = np.array([tx, ty, tz])
-                if (target_coords is not None and isclose(target_coords.x, tx, rel_tol=.05) and isclose(target_coords.y, ty, rel_tol=.05) and isclose(target_coords.z, tz, rel_tol=.05):
-                    cv2.line(img_vis, (txmin, tymin), (txmax, tymax), 2) 
+                #rospy.loginfo("%s, %s, %s" % (target_coords.x, target_coords.y, target_coords.z))
+                rospy.loginfo(target_coords)
+                if (target_coords is not None and
+                        abs(target_coords.x - tx) < .05 and
+                        abs(target_coords.y - ty) < .05 and
+                        abs(target_coords.z - tz) < .05):
+                #if (target_coords is not None and isclose(target_coords.x, tx, rel_tol=.05) and isclose(target_coords.y, ty, rel_tol=.05) and isclose(target_coords.z, tz, rel_tol=.05)):
+                    cv2.circle(img_vis, (int((tymax + tymin) * 0.5), int((txmax + txmin) * 0.5)), 15, (255,0,0),-1)
 
                 rst_vecs = [rvec, tvec, t_class_name, t_class]
                 detections.append(rst_vecs)
@@ -280,17 +285,12 @@ def load_configs():
 
     return None
 
+target_coords = None
 
-class target_object_listener:
-    target_coords = None
-
-    def listener():
-        rospy.init_node('listener', anonymous=True)
-        rospy.Subscriber('/alexa_target', Point, callback)
-        rospy.spin()
-
-    def callback(data):
-        target_coords = data
+def callback(data):
+    global target_coords
+    target_coords = data
+    rospy.loginfo('target_coords: %s' % target_coords)
         
         
 def run_detection():
@@ -299,6 +299,8 @@ def run_detection():
         return
 
     rospy.init_node(config.node_title)
+    rospy.Subscriber('/alexa_target', Point, callback)
+    #rospy.spin()
     rcnn_projection = RcnnProjection(
         title=config.node_title,
         base_dir=config.base_data_dir,
@@ -312,11 +314,11 @@ def run_detection():
                 queue_size=1)
 
         rate = rospy.Rate(config.frequency)  # 1 hz
-        target_object_listener.listener()
 
         while not rospy.is_shutdown():
             update_timestamp_str = 'update: %s' % rospy.get_time()
-            rst = rcnn_projection.detect_objects(target_object_listener.target_coords)
+            global target_coords
+            rst = rcnn_projection.detect_objects(target_coords)
 
             item_dict = dict()
             poses = list()
@@ -353,7 +355,7 @@ def run_detection():
 
             pub_pose.publish(poses)
 
-            rospy.loginfo(update_timestamp_str)
+            #rospy.loginfo(update_timestamp_str)
             rate.sleep()
 
     except rospy.ROSInterruptException:
