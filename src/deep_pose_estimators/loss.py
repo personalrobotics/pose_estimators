@@ -1,127 +1,101 @@
+from __future__ import print_function
+from __future__ import division
+
 import torch
 import torch.nn as nn
-import torch.functional as F
+import torch.nn.functional as F
 
-
-def log_sum_exp(x, dim, keepdim=False):
-    x_max = x.max(dim=dim, keepdim=True)[0]
-
-    if keepdim:
-        return (x - x_max).exp().sum(dim=dim, keepdim=True).log() + x_max
-    else:
-        return (x - x_max).exp().sum(dim=dim).log() + x_max.squeeze(dim)
-
-
-def _softmax_cross_entropy_with_logits(x, t):
-    assert x.size()[:-1] == t.size()
-    xt = torch.gather(x, -1, t.long().unsqueeze(-1))
-    return log_sum_exp(x, dim=-1, keepdim=False) - xt.squeeze(-1)
-
-
-class MultiBoxLoss(nn.Module):
-    def __init__(self):
-        super(MultiBoxLoss, self).__init__()
-
-    def _hard_negative_mining(self, loss, pos, neg, k):
-        loss = loss.detach()
-        rank = (loss * (-1 * neg.float())).sort(dim=1)[1].sort(dim=1)[1]
-        hard_neg = rank < (pos.long().sum(dim=1, keepdim=True) * k)
-        return hard_neg
-
-    def forward(self, xloc, xconf, loc, label, k=3):   # xconf is logits
-        pos = label > 0
-        neg = label == 0
-        label = label.clamp(min=0)
-
-        pos_idx = pos.unsqueeze(-1).expand_as(xloc)
-        loc_loss = F.smooth_l1_loss(xloc[pos_idx].view(-1, 4), loc[pos_idx].view(-1, 4),
-                                    size_average=False)
-
-        conf_loss = _softmax_cross_entropy_with_logits(xconf, label)
-        hard_neg = self._hard_negative_mining(conf_loss, pos, neg, k)
-        conf_loss = conf_loss * (pos + hard_neg).gt(0).float()
-        conf_loss = conf_loss.sum()
-
-        N = pos.data.float().sum() + 1e-3#.clamp(min=1e-3)
-        return loc_loss / N, conf_loss / N
-
-
-def _softmax_focal_loss(x, t, gamma=2):
-    assert x.size()[:-1] == t.size()
-    logp = torch.gather(F.log_softmax(x), -1, t.long().unsqueeze(-1))
-    FL = - (1 - logp.exp()).pow(gamma) * logp
-    return FL.sum()
+from utils import one_hot_embedding
+from torch.autograd import Variable
 
 
 class FocalLoss(nn.Module):
-    def __init__(self, alpha=0.25, gamma=2):
-        super().__init__()
-        self.alpha = alpha
-        self.gamma = gamma
+    def __init__(self, num_classes=20):
+        super(FocalLoss, self).__init__()
+        self.num_classes = num_classes
 
-        self.count = 0
-        self.multiloss = MultiBoxLoss()
+    def focal_loss(self, x, y):
+        '''Focal loss.
 
-    def forward(self, xloc, xconf, loc, label):
-        pos = label > 0
-        neg = label == 0
+        Args:
+          x: (tensor) sized [N,D].
+          y: (tensor) sized [N,].
 
-        pos_idx = pos.unsqueeze(-1).expand_as(xloc)
-        loc_loss = F.smooth_l1_loss(xloc[pos_idx].view(-1, 4), loc[pos_idx].view(-1, 4),
-                                    size_average=False)
+        Return:
+          (tensor) focal loss.
+        '''
+        alpha = 0.25
+        gamma = 2
 
-        pos_idx = pos.unsqueeze(-1).expand_as(xconf)
-        pos_conf_loss = _softmax_focal_loss(xconf[pos_idx].view(-1, xconf.size(-1)), label[pos])
-        neg_idx = neg.unsqueeze(-1).expand_as(xconf)
-        neg_conf_loss = _softmax_focal_loss(xconf[neg_idx].view(-1, xconf.size(-1)), label[neg])
+        t = one_hot_embedding(y.data.cpu(), 1 + self.num_classes)  # [N,21]
+        t = t[:, 1:]  # exclude background
+        t = t.cuda()  # [N,20]
 
-        conf_loss = self.alpha * pos_conf_loss + (1 - self.alpha) * neg_conf_loss
+        p = x.sigmoid()
+        pt = p * t + (1 - p) * (1 - t)         # pt = p if t > 0 else 1-p
+        # w = alpha if t > 0 else 1-alpha
+        w = alpha * t + (1 - alpha) * (1 - t)
+        w = w * (1 - pt).pow(gamma)
+        return F.binary_cross_entropy_with_logits(x, t, w, size_average=False)
 
-        self.count += 1
-        if self.count % 1000 == 0:
-            print('pos loss, neg loss', pos_conf_loss.data, neg_conf_loss.data)
-            print('multiloss', self.multiloss(xloc, xconf, loc, label, 3))
+    def focal_loss_alt(self, x, y):
+        '''Focal loss alternative.
 
-        N = pos.float().sum().clamp(min=1e-3)
-        return loc_loss / N, conf_loss / N
+        Args:
+          x: (tensor) sized [N,D].
+          y: (tensor) sized [N,].
 
+        Return:
+          (tensor) focal loss.
+        '''
+        alpha = 0.25
 
-# class SigmoidFocalLoss(nn.Module):
-#     def __init__(self, alpha=0.25, scale=4.):
-#         super().__init__()
-#         self.alpha = alpha
-#         self.scale = scale
-#         self.onehot = None
+        t = one_hot_embedding(y.data.cpu(), 1 + self.num_classes)
+        t = t[:, 1:]
+        t = t.cuda()
 
-#     def forward(self, xloc, xconf, loc, label):
-#         pos = label > 0
-#         neg = label == 0
+        xt = x * (2 * t - 1)  # xt = x if t > 0 else -x
+        pt = (2 * xt + 1).sigmoid()
 
-#         # loc
-#         pos_idx = pos.unsqueeze(-1).expand_as(xloc)
-#         loc_loss = F.smooth_l1_loss(xloc[pos_idx].view(-1, 4), loc[pos_idx].view(-1, 4),
-#                                     size_average=False)
+        w = alpha * t + (1 - alpha) * (1 - t)
+        loss = -w * pt.log() / 2
+        return loss.sum()
 
-#         # conf
-#         if self.onehot is None or self.onehot.size() != xconf.size():
-#             self.onehot = Variable(torch.zeros(xconf.size())).detach()
-#             if xconf.is_cuda:
-#                 self.onehot = self.onehot.cuda()
-#         self.onehot.data.fill_(0)
-#         self.onehot.data.scatter_(-1, label.data.clamp(min=0).long().unsqueeze(-1), 1)
+    def forward(self, loc_preds, loc_targets, cls_preds, cls_targets):
+        '''Compute loss between (loc_preds, loc_targets) and (cls_preds, cls_targets).
 
-#         pos_idx = pos.unsqueeze(-1).expand_as(xconf)
-#         pos_conf_loss = F.multilabel_soft_margin_loss(
-#             self.scale * xconf[pos_idx].view(-1, xconf.size(-1)),
-#             self.onehot[pos_idx].view(-1, xconf.size(-1)),
-#             size_average=False)
-#         neg_idx = neg.unsqueeze(-1).expand_as(xconf)
-#         neg_conf_loss = F.multilabel_soft_margin_loss(
-#             self.scale * xconf[neg_idx].view(-1, xconf.size(-1)),
-#             self.onehot[neg_idx].view(-1, xconf.size(-1)),
-#             size_average=False)
+        Args:
+          loc_preds: (tensor) predicted locations, sized [batch_size, #anchors, 4].
+          loc_targets: (tensor) encoded target locations, sized [batch_size, #anchors, 4].
+          cls_preds: (tensor) predicted class confidences, sized [batch_size, #anchors, #classes].
+          cls_targets: (tensor) encoded target labels, sized [batch_size, #anchors].
 
-#         conf_loss = self.alpha * pos_conf_loss + (1 - self.alpha) * neg_conf_loss
+        loss:
+          (tensor) loss = SmoothL1Loss(loc_preds, loc_targets) + FocalLoss(cls_preds, cls_targets).
+        '''
+        batch_size, num_boxes = cls_targets.size()
+        pos = cls_targets > 0  # [N,#anchors]
+        num_pos = pos.data.sum().type(torch.cuda.FloatTensor)
 
-#         N = pos.float().sum().clamp(min=1e-3)
-#         return loc_loss / N, conf_loss / N
+        ################################################################
+        # loc_loss = SmoothL1Loss(pos_loc_preds, pos_loc_targets)
+        ################################################################
+        mask = pos.unsqueeze(2).expand_as(loc_preds)       # [N,#anchors,4]
+        masked_loc_preds = loc_preds[mask].view(-1, 4)      # [#pos,4]
+        masked_loc_targets = loc_targets[mask].view(-1, 4)  # [#pos,4]
+        loc_loss = F.smooth_l1_loss(
+            masked_loc_preds, masked_loc_targets, size_average=False)
+
+        ################################################################
+        # cls_loss = FocalLoss(loc_preds, loc_targets)
+        ################################################################
+        pos_neg = cls_targets > -1  # exclude ignored anchors
+        mask = pos_neg.unsqueeze(2).expand_as(cls_preds)
+        masked_cls_preds = cls_preds[mask].view(-1, self.num_classes)
+        cls_loss = self.focal_loss(masked_cls_preds, cls_targets[pos_neg])
+
+        print('loc_loss: %.3f | cls_loss: %.3f' %
+              (loc_loss.data / num_pos, cls_loss.data / num_pos), end=' | ')
+        loss = (loc_loss + cls_loss) / num_pos
+
+        return loss
