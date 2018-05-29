@@ -13,8 +13,9 @@ import torch.utils.data as data
 import torchvision.transforms as transforms
 
 from PIL import Image
-from encoder import DataEncoder
-from transform import resize, random_flip, random_crop, center_crop
+
+from utils.encoder import DataEncoder
+from utils.transform import resize, random_flip, random_crop, center_crop
 
 
 class ListDataset(data.Dataset):
@@ -124,28 +125,3 @@ class ListDataset(data.Dataset):
 
     def __len__(self):
         return self.num_samples
-
-
-def test():
-    import torchvision
-
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-    ])
-    dataset = ListDataset(root='/mnt/hgfs/D/download/PASCAL_VOC/voc_all_images',
-                          list_file='./data/voc12_train.txt', train=True, transform=transform, input_size=600)
-    dataloader = torch.utils.data.DataLoader(
-        dataset, batch_size=8, shuffle=False, num_workers=1, collate_fn=dataset.collate_fn)
-
-    for images, loc_targets, cls_targets in dataloader:
-        print(images.size())
-        print(loc_targets.size())
-        print(cls_targets.size())
-        grid = torchvision.utils.make_grid(images, 1)
-        torchvision.utils.save_image(grid, 'a.jpg')
-        break
-
-
-if __name__ == '__main__':
-    test()

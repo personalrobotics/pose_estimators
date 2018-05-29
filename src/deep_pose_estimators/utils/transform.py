@@ -133,13 +133,3 @@ def draw(img, boxes):
     for box in boxes:
         draw.rectangle(list(box), outline='red')
     img.show()
-
-
-def test():
-    img = Image.open('./image/000001.jpg')
-    boxes = torch.Tensor([[48, 240, 195, 371], [8, 12, 352, 498]])
-    img, boxes = random_crop(img, boxes)
-    print(img.size)
-    draw(img, boxes)
-
-# test()

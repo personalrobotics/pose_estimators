@@ -5,8 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from utils import one_hot_embedding
-from torch.autograd import Variable
+from utils.utils import one_hot_embedding
 
 
 class FocalLoss(nn.Module):
@@ -92,7 +91,7 @@ class FocalLoss(nn.Module):
         pos_neg = cls_targets > -1  # exclude ignored anchors
         mask = pos_neg.unsqueeze(2).expand_as(cls_preds)
         masked_cls_preds = cls_preds[mask].view(-1, self.num_classes)
-        cls_loss = self.focal_loss(masked_cls_preds, cls_targets[pos_neg])
+        cls_loss = self.focal_loss_alt(masked_cls_preds, cls_targets[pos_neg])
 
         print('loc_loss: %.3f | cls_loss: %.3f' %
               (loc_loss.data / num_pos, cls_loss.data / num_pos), end=' | ')

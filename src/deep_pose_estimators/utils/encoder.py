@@ -2,7 +2,7 @@
 import math
 import torch
 
-from utils import meshgrid, box_iou, box_nms, change_box_order
+from .utils import meshgrid, box_iou, box_nms, change_box_order
 
 
 class DataEncoder:
@@ -108,8 +108,8 @@ class DataEncoder:
           boxes: (tensor) decode box locations, sized [#obj,4].
           labels: (tensor) class labels for each box, sized [#obj,].
         '''
-        CLS_THRESH = 0.35
-        NMS_THRESH = 0.35
+        CLS_THRESH = 0.4
+        NMS_THRESH = 0.4
 
         input_size = torch.Tensor([input_size, input_size]) if isinstance(input_size, int) \
             else torch.Tensor(input_size)
@@ -126,5 +126,7 @@ class DataEncoder:
         ids = score > CLS_THRESH
         ids = ids.nonzero().squeeze()             # [#obj,]
 
-        keep = box_nms(boxes[ids], score[ids], threshold=NMS_THRESH)
-        return boxes[ids][keep], labels[ids][keep]
+        keep = list()
+        if len(ids.size()) > 0 and ids.size()[0] > 0:
+            keep = box_nms(boxes[ids], score[ids], threshold=NMS_THRESH)
+        return boxes[ids][keep], labels[ids][keep], score[ids]

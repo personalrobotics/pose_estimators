@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 '''Init RestinaNet50 with pretrained ResNet50 model.
 
 Download pretrained ResNet50 params from:
@@ -10,17 +12,16 @@ import torch.nn as nn
 import math
 import os
 import sys
-sys.path.append('./')
 
-from fpn import FPN50
-from retinanet import RetinaNet
+from model.fpn import FPN50
+from model.retinanet import RetinaNet
 
 
-model_base_dir = './model'
+model_base_dir = './pretrained'
 model_filename = os.path.join(model_base_dir, 'resnet50.pth')
 model_url = 'https://download.pytorch.org/models/resnet50-19c8e357.pth'
 
-net_filename = os.path.join(model_base_dir, 'net.pth')
+net_filename = os.path.join(model_base_dir, 'net_new.pth')
 
 
 def load_pretrained_model():
@@ -42,7 +43,7 @@ def load_pretrained_model():
     return torch.load(model_filename)
 
 
-def get_state_dict():
+def import_pretrained_resnet():
     print('Loading pretrained ResNet50 model..')
 
     d = load_pretrained_model()
@@ -55,7 +56,7 @@ def get_state_dict():
             dd[k] = d[k]
 
     print('Saving RetinaNet..')
-    net = RetinaNet(num_classes=48)
+    net = RetinaNet(num_classes=49)
     for m in net.modules():
         if isinstance(m, nn.Conv2d):
             nn.init.normal_(m.weight, mean=0, std=0.01)
@@ -74,4 +75,4 @@ def get_state_dict():
 
 
 if __name__ == '__main__':
-    get_state_dict()
+    import_pretrained_resnet()

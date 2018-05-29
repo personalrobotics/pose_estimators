@@ -16,8 +16,8 @@ import torch.backends.cudnn as cudnn
 import torchvision
 import torchvision.transforms as transforms
 
-from loss import FocalLoss
-from retinanet import RetinaNet
+from loss.focal_loss import FocalLoss
+from model.retinanet import RetinaNet
 from datagen import ListDataset
 
 
@@ -27,11 +27,11 @@ parser.add_argument('--gpus', '-g', default='0',
 parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
 parser.add_argument('--skip_checkpoint', '-s', action='store_true',
                     help='skip checkpoint and retrain')
-parser.add_argument('--img_dir', default='./data/voc_all_images',
+parser.add_argument('--img_dir', default='./datasets/voc_all_images',
                     help='image directory path')
-parser.add_argument('--train_list', default='./data/voc12_train.txt',
+parser.add_argument('--train_list', default='./datasets/voc12_train.txt',
                     help='annotations for training dataset')
-parser.add_argument('--test_list', default='./data/voc12_val.txt',
+parser.add_argument('--test_list', default='./datasets/voc12_val.txt',
                     help='annotations for test dataset')
 parser.add_argument('--train_batch_size', default=8, type=int,
                     help='batch size of training')
@@ -39,7 +39,7 @@ parser.add_argument('--test_batch_size', default=4, type=int,
                     help='batch size of testing')
 parser.add_argument('--num_classes', default=20, type=int,
                     help='number of classes')
-parser.add_argument('--net', default='./model/net.pth',
+parser.add_argument('--net', default='./pretrained/net.pth',
                     help='saved state dict of the model')
 parser.add_argument('--checkpoint', default='./checkpoint/ckpt.pth',
                     help='saved checkpoint path')

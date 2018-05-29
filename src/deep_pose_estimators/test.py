@@ -3,13 +3,18 @@
 import sys
 import os
 import argparse
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
 
 import torch
 import torchvision.transforms as transforms
 
-from retinanet import RetinaNet
-from encoder import DataEncoder
 from PIL import Image, ImageDraw, ImageFont
+
+from model.retinanet import RetinaNet
+from utils.encoder import DataEncoder
 
 
 parser = argparse.ArgumentParser(description='PyTorch RetinaNet Testing')
@@ -21,9 +26,18 @@ parser.add_argument('--num_classes', default=20, type=int,
                     help='number of classes')
 parser.add_argument('--checkpoint', default='./checkpoint/ckpt.pth',
                     help='saved checkpoint path')
+parser.add_argument('--label_map', default='./data/label_map.pkl',
+                    help='label map for the model')
 args = parser.parse_args()
 
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
+
+
+def load_pickled_label_map():
+    with open(args.label_map, 'r') as f:
+        label_map = pickle.load(f)
+    assert label_map is not None, 'cannot load label map'
+    return label_map
 
 
 def run_test():
@@ -52,19 +66,30 @@ def run_test():
 
         print('Decoding..')
         encoder = DataEncoder()
-        boxes, labels = encoder.decode(
+        boxes, labels, scores = encoder.decode(
             loc_preds.cpu().data.squeeze(),
             cls_preds.cpu().data.squeeze(),
             (w, h))
 
+        label_map = load_pickled_label_map()
 
-        draw = ImageDraw.Draw(img)
-        fnt = ImageFont.truetype('Pillow/Tests/fonts/FreeMono.ttf', 15)
+        draw = ImageDraw.Draw(img, 'RGBA')
+        fnt = ImageFont.truetype('Pillow/Tests/fonts/DejaVuSans.ttf', 11)
         for idx in range(len(boxes)):
             box = boxes[idx]
             label = labels[idx]
-            draw.rectangle(list(box), outline='red')
-            draw.text(list(box[:2]), str(label.item()), font=fnt, fill=(255, 0, 0, 255))
+            draw.rectangle(list(box), outline=(255, 0, 0, 200))
+
+            item_tag = '{0}: {1:.2f}'.format(
+                label_map[label.item()],
+                scores[idx])
+            iw, ih = fnt.getsize(item_tag)
+            ix, iy = list(box[:2])
+            draw.rectangle((ix, iy, ix + iw, iy + ih), fill=(255, 0, 0, 100))
+            draw.text(
+                list(box[:2]),
+                item_tag,
+                font=fnt, fill=(255, 255, 255, 255))
         img.show()
 
 

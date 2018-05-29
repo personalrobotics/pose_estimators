@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
 
-from fpn import FPN50
-from torch.autograd import Variable
+from .fpn import FPN50
 
 
 class RetinaNet(nn.Module):
@@ -50,11 +49,11 @@ class RetinaNet(nn.Module):
 
 def test():
     net = RetinaNet()
-    loc_preds, cls_preds = net(Variable(torch.randn(2, 3, 224, 224)))
+    loc_preds, cls_preds = net(torch.randn(2, 3, 224, 224))
     print(loc_preds.size())
     print(cls_preds.size())
-    loc_grads = Variable(torch.randn(loc_preds.size()))
-    cls_grads = Variable(torch.randn(cls_preds.size()))
+    loc_grads = torch.randn(loc_preds.size())
+    cls_grads = torch.randn(cls_preds.size())
     loc_preds.backward(loc_grads)
     cls_preds.backward(cls_grads)
 
