@@ -76,7 +76,8 @@ class DataEncoder:
           loc_targets: (tensor) encoded bounding boxes, sized [#anchors,4].
           cls_targets: (tensor) encoded class labels, sized [#anchors,].
         '''
-        input_size = torch.Tensor([input_size, input_size]) if isinstance(input_size, int) \
+        input_size = torch.Tensor([input_size, input_size]) \
+            if isinstance(input_size, int) \
             else torch.Tensor(input_size)
         anchor_boxes = self._get_anchor_boxes(input_size)
         boxes = change_box_order(boxes, 'xyxy2xywh')
@@ -108,10 +109,11 @@ class DataEncoder:
           boxes: (tensor) decode box locations, sized [#obj,4].
           labels: (tensor) class labels for each box, sized [#obj,].
         '''
-        CLS_THRESH = 0.4
-        NMS_THRESH = 0.4
+        CLS_THRESH = 0.5
+        NMS_THRESH = 0.5
 
-        input_size = torch.Tensor([input_size, input_size]) if isinstance(input_size, int) \
+        input_size = torch.Tensor([input_size, input_size]) \
+            if isinstance(input_size, int) \
             else torch.Tensor(input_size)
         anchor_boxes = self._get_anchor_boxes(input_size)
 
@@ -124,9 +126,15 @@ class DataEncoder:
 
         score, labels = cls_preds.sigmoid().max(1)          # [#anchors,]
         ids = score > CLS_THRESH
-        ids = ids.nonzero().squeeze()             # [#obj,]
+
+        ids = ids.nonzero()
+        if ids.size()[0] <= 1:
+            ids = ids.squeeze(0)
+        else:
+            ids = ids.squeeze()             # [#obj,]
 
         keep = list()
-        if len(ids.size()) > 0 and ids.size()[0] > 0:
+        if ids.size()[0] > 0:
             keep = box_nms(boxes[ids], score[ids], threshold=NMS_THRESH)
         return boxes[ids][keep], labels[ids][keep], score[ids]
+

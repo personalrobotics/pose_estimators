@@ -51,8 +51,9 @@ class DetectionWithProjection:
         self.net = None
         self.transform = None
         self.label_map = None
+        self.encoder = None
 
-        self.camera_tilt = 0
+        self.camera_tilt = 1e-5
 
         self.init_ros_subscribers()
 
@@ -114,6 +115,8 @@ class DetectionWithProjection:
             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
         ])
 
+        self.encoder = DataEncoder()
+
     def load_label_map(self):
         with open(config.label_map, 'r') as f:
             label_map = pickle.load(f)
@@ -130,7 +133,7 @@ class DetectionWithProjection:
     def detect_objects(self):
         if self.img_msg is None:
             print('no input stream')
-            return
+            return list()
 
         if self.net is None:
             self.init_retinanet()
@@ -146,8 +149,7 @@ class DetectionWithProjection:
         with torch.no_grad():
             loc_preds, cls_preds = self.net(x.cuda())
 
-            encoder = DataEncoder()
-            boxes, labels, scores = encoder.decode(
+            boxes, labels, scores = self.encoder.decode(
                 loc_preds.cpu().data.squeeze(),
                 cls_preds.cpu().data.squeeze(),
                 (w, h))
@@ -156,7 +158,7 @@ class DetectionWithProjection:
             print('no detection')
             msg_img = self.bridge.cv2_to_imgmsg(np.array(img), "rgb8")
             self.pub_img.publish(msg_img)
-            return
+            return list()
 
         # Intrinsic camera matrix for the raw (distorted) images.
         #     [fx  0 cx]
@@ -171,12 +173,11 @@ class DetectionWithProjection:
         cam_cx = camera_matrix[0, 2]
         cam_cy = camera_matrix[1, 2]
 
-        camera_to_table = 0.25
-        # when camera_tilt = 30, z0 = 1.175
-        z0 = (camera_to_table /
-              (np.cos(np.radians(90 - self.camera_tilt)) + 0.1 ** 10))
-        rvec = np.array([1.08, 0.0, 0.0])
-        tan_theta = np.tan(self.camera_tilt * np.pi / 180.)
+        # z0 = (config.camera_to_table /
+        #       (np.cos(np.radians(90 - self.camera_tilt)) + 0.1 ** 10))
+        z0 = config.camera_to_table
+        rvec = np.array([0.0, 0.0, 0.0])
+        tan_theta = np.tan((self.camera_tilt - 90) * np.pi / 180.)
 
         # box_idx_list = self.cleanup_detections(boxes, scores)
 
@@ -193,9 +194,9 @@ class DetectionWithProjection:
             y0 = (z0 / cam_fy) * (pt[0] - cam_cy)
             tan_alpha = -y0 / z0
             tz = z0 - (y0 / (tan_theta - tan_alpha))
-            tx = (tz / cam_fx) * (pt[1] - cam_cx)
-            ty = (tz / cam_fy) * (pt[0] - cam_cy)
-            tvec = np.array([tx, ty, tz])
+            tx = (tz / cam_fx) * (pt[1] - cam_cx) + 0.045
+            ty = (tz / cam_fy) * (pt[0] - cam_cy) - 0.085
+            tvec = np.array([ty, tx, tz])
 
             rst_vecs = [rvec, tvec, t_class_name, t_class]
             detections.append(rst_vecs)
@@ -301,9 +302,9 @@ def run_detection():
                     pose.header.frame_id = config.camera_tf
                     pose.header.stamp = rospy.Time.now()
                     pose.id = item[3]
-                    pose.text = item[2]
+                    pose.text = 'food_item'
                     pose.ns = '{}_{}'.format(item[2], item_dict[item[2]])
-                    pose.type = Marker.CYLINDER
+                    pose.type = Marker.CUBE
                     pose.pose.position.x = item[1][0]
                     pose.pose.position.y = item[1][1]
                     pose.pose.position.z = item[1][2]
@@ -311,12 +312,12 @@ def run_detection():
                     pose.pose.orientation.y = item[0][1]
                     pose.pose.orientation.z = item[0][2]
                     pose.pose.orientation.w = 1
-                    pose.scale.x = 0.1
-                    pose.scale.y = 0.1
-                    pose.scale.z = 0.23
-                    pose.color.a = 1.0
+                    pose.scale.x = 0.04
+                    pose.scale.y = 0.04
+                    pose.scale.z = 0.04
+                    pose.color.a = 0.5
                     pose.color.r = 1.0
-                    pose.color.g = 0.1
+                    pose.color.g = 0.5
                     pose.color.b = 0.1
                     pose.lifetime = rospy.Duration(0)
                     poses.append(pose)

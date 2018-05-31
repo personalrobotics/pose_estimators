@@ -3,12 +3,14 @@
 
     "image_topic": "/camera/color/image_raw/compressed",
     "msg_type": "compressed",
-    "camera_tf": "camera_color_frame",
+    "camera_tf": "camera_color_optical_frame",
     "camera_info_topic": "/camera/color/camera_info",
 
+    "camera_to_table": 0.4,
+
     "num_classes": 49,
-    "checkpoint": "./checkpoint/food_ckpt.pth",
-    "label_map": "./datasets/food_label_map.pkl",
+    "checkpoint": "/home/herb/Workspace/ada_ws/src/deep_pose_estimators/src/deep_pose_estimators/checkpoint/food_ckpt.pth",
+    "label_map": "/home/herb/Workspace/ada_ws/src/deep_pose_estimators/src/deep_pose_estimators/datasets/food_label_map.pkl",
 
     "node_title": "deep_pose",
     "frequency": 1
