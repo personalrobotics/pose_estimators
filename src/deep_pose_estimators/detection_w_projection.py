@@ -10,7 +10,6 @@ import sys
 import cv2
 import rospy
 import rospkg
-import argparse
 try:
     import cPickle as pickle
 except ImportError:
@@ -24,11 +23,8 @@ from PIL import ImageDraw, ImageFont
 
 from visualization_msgs.msg import Marker, MarkerArray
 from sensor_msgs.msg import CompressedImage, Image, CameraInfo
-from std_msgs.msg import Float32MultiArray
 
 from cv_bridge import CvBridge
-from scipy import misc
-from matplotlib import pyplot as plt
 
 from model.retinanet import RetinaNet
 from utils.encoder import DataEncoder
@@ -91,17 +87,6 @@ class DetectionWithProjection:
 
     def camera_info_callback(self, ros_data):
         self.camera_info = ros_data
-
-    def visualize_boxes(self, img, boxes, classes, scores, category_index):
-        # Visualization of the results of a detection.
-        vis_util.visualize_boxes_and_labels_on_image_array(
-                img,
-                np.squeeze(boxes),
-                np.squeeze(classes).astype(np.int32),
-                np.squeeze(scores),
-                category_index,
-                use_normalized_coordinates=True,
-                line_thickness=2)
 
     def init_retinanet(self):
         self.net = RetinaNet(config.num_classes)
@@ -333,4 +318,3 @@ def run_detection():
 
 if __name__ == '__main__':
     run_detection()
-
