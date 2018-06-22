@@ -44,6 +44,7 @@ class DetectionWithProjection:
         self.title = title
 
         self.img_msg = None
+	self.depth_img_msg = None
         self.net = None
         self.transform = None
         self.label_map = None
@@ -71,6 +72,17 @@ class DetectionWithProjection:
                     self.sensor_image_callback, queue_size=1)
         print('subscribed to {}'.format(config.image_topic))
 
+	# subscribe depth topic
+        if config.depth_msg_type == 'compressed':
+            self.subscriber = rospy.Subscriber(
+                    config.depth_image_topic, CompressedImage,
+                    self.sensor_compressed_depth_callback, queue_size=1)
+        else:  # raw
+            self.subscriber = rospy.Subscriber(
+                    config.depth_image_topic, Image,
+                    self.sensor_depth_callback, queue_size=1)
+        print('subscribed to {}'.format(config.depth_image_topic))
+
         # subscribe camera info topic
         self.subscriber = rospy.Subscriber(
                 config.camera_info_topic, CameraInfo,
@@ -84,6 +96,14 @@ class DetectionWithProjection:
 
     def sensor_image_callback(self, ros_data):
         self.img_msg = self.bridge.imgmsg_to_cv2(ros_data, 'rgb8')
+
+    def sensor_compressed_depth_callback(self, ros_data):
+        np_arr = np.fromstring(ros_data.data, np.uint8)
+        self.depth_img_msg = cv2.imdecode(np_arr, cv2.IMREAD_GRAYSCALE)
+        self.depth_img_msg = 255. - cv2.cvtColor(self.depth_img_msg, cv2.COLOR_GRAY2RGB)
+
+    def sensor_depth_callback(self, ros_data):
+        self.depth_img_msg = self.bridge.imgmsg_to_cv2(ros_data, 'bgr8')
 
     def camera_info_callback(self, ros_data):
         self.camera_info = ros_data
@@ -115,10 +135,19 @@ class DetectionWithProjection:
         tymax = int(box[3] * img_shape[1])
         return txmin, tymin, txmax, tymax
 
+    def calculate_depth(self, xmin, ymin, xmax, ymax, dimg):
+	dimg_sliced = np.array(dimg)[xmin:xmax,ymin:ymax]
+	z0 = np.mean(dimg_sliced)
+	return z0	
+
     def detect_objects(self):
         if self.img_msg is None:
             print('no input stream')
             return list()
+	
+	if self.depth_img_msg is None:
+	    print('no input depth stream')
+	    return list()
 
         if self.net is None:
             self.init_retinanet()
@@ -127,6 +156,7 @@ class DetectionWithProjection:
             self.load_label_map()
 
         img = PILImage.fromarray(self.img_msg.copy())
+	depth_img = PILImage.fromarray(self.depth_img_msg.copy())
         w, h = img.size
 
         x = self.transform(img)
@@ -160,7 +190,7 @@ class DetectionWithProjection:
 
         # z0 = (config.camera_to_table /
         #       (np.cos(np.radians(90 - self.camera_tilt)) + 0.1 ** 10))
-        z0 = config.camera_to_table
+        #z0 = config.camera_to_table
         rvec = np.array([0.0, 0.0, 0.0])
         tan_theta = np.tan((self.camera_tilt - 90) * np.pi / 180.)
 
@@ -174,6 +204,7 @@ class DetectionWithProjection:
             t_class_name = self.label_map[t_class]
 
             txmin, tymin, txmax, tymax = boxes[box_idx].numpy()
+	    z0 = self.calculate_depth(txmin, tymin, txmax, tymax, depth_img)	    
 
             pt = [txmax, (tymax + tymin) * 0.5]
             y0 = (z0 / cam_fy) * (pt[0] - cam_cy)

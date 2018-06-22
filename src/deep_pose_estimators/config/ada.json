@@ -3,6 +3,8 @@
 
     "image_topic": "/camera/color/image_raw/compressed",
     "msg_type": "compressed",
+    "depth_image_topic": "/camera/aligned_depth_to_color/image_raw",
+    "depth_msg_type": "raw",
     "camera_tf": "camera_color_optical_frame",
     "camera_info_topic": "/camera/color/camera_info",
 
