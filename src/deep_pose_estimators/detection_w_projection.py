@@ -72,15 +72,10 @@ class DetectionWithProjection:
                     self.sensor_image_callback, queue_size=1)
         print('subscribed to {}'.format(config.image_topic))
 
-	# subscribe depth topic
-        if config.depth_msg_type == 'compressed':
-            self.subscriber = rospy.Subscriber(
-                    config.depth_image_topic, CompressedImage,
-                    self.sensor_compressed_depth_callback, queue_size=1)
-        else:  # raw
-            self.subscriber = rospy.Subscriber(
-                    config.depth_image_topic, Image,
-                    self.sensor_depth_callback, queue_size=1)
+	# subscribe depth topic, only raw for now
+        self.subscriber = rospy.Subscriber(
+        	config.depth_image_topic, Image,
+                self.sensor_depth_callback, queue_size=1)
         print('subscribed to {}'.format(config.depth_image_topic))
 
         # subscribe camera info topic
@@ -97,13 +92,8 @@ class DetectionWithProjection:
     def sensor_image_callback(self, ros_data):
         self.img_msg = self.bridge.imgmsg_to_cv2(ros_data, 'rgb8')
 
-    def sensor_compressed_depth_callback(self, ros_data):
-        np_arr = np.fromstring(ros_data.data, np.uint8)
-        self.depth_img_msg = cv2.imdecode(np_arr, cv2.IMREAD_GRAYSCALE)
-        self.depth_img_msg = 255. - cv2.cvtColor(self.depth_img_msg, cv2.COLOR_GRAY2RGB)
-
     def sensor_depth_callback(self, ros_data):
-        self.depth_img_msg = self.bridge.imgmsg_to_cv2(ros_data, 'bgr8')
+        self.depth_img_msg = self.bridge.imgmsg_to_cv2(ros_data, '16UC1')
 
     def camera_info_callback(self, ros_data):
         self.camera_info = ros_data
