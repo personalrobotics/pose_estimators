@@ -126,15 +126,16 @@ class DetectionWithProjection:
         return txmin, tymin, txmax, tymax
 
     def calculate_depth(self, xmin, ymin, xmax, ymax, dimg):
-	dimg_sliced = np.array(dimg)[xmin:xmax,ymin:ymax]
+	dimg_sliced = np.array(dimg)[int(xmin):int(xmax),int(ymin):int(ymax)]
 	z0 = np.mean(dimg_sliced)
-	return z0	
+        # mm to m
+	return z0/1000.0
 
     def detect_objects(self):
         if self.img_msg is None:
             print('no input stream')
             return list()
-	
+
 	if self.depth_img_msg is None:
 	    print('no input depth stream')
 	    return list()
@@ -194,7 +195,7 @@ class DetectionWithProjection:
             t_class_name = self.label_map[t_class]
 
             txmin, tymin, txmax, tymax = boxes[box_idx].numpy()
-	    z0 = self.calculate_depth(txmin, tymin, txmax, tymax, depth_img)	    
+            z0 = self.calculate_depth(txmin, tymin, txmax, tymax, depth_img)
 
             pt = [(txmax + txmin) * 0.5, (tymax + tymin) * 0.5]
             y0 = (z0 / cam_fy) * (pt[0] - cam_cy)
