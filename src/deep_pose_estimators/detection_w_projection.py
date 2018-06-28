@@ -175,7 +175,7 @@ class DetectionWithProjection:
 
             txmin, tymin, txmax, tymax = boxes[box_idx].numpy()
 
-            pt = [txmax, (tymax + tymin) * 0.5]
+            pt = [(txmax + txmin) * 0.5, (tymax + tymin) * 0.5]
             y0 = (z0 / cam_fy) * (pt[0] - cam_cy)
             tan_alpha = -y0 / z0
             tz = z0 - (y0 / (tan_theta - tan_alpha))
