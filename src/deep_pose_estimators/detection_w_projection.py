@@ -44,7 +44,7 @@ class DetectionWithProjection:
         self.title = title
 
         self.img_msg = None
-	self.depth_img_msg = None
+        self.depth_img_msg = None
         self.net = None
         self.transform = None
         self.label_map = None
@@ -72,9 +72,9 @@ class DetectionWithProjection:
                     self.sensor_image_callback, queue_size=1)
         print('subscribed to {}'.format(config.image_topic))
 
-	# subscribe depth topic, only raw for now
+        # subscribe depth topic, only raw for now
         self.subscriber = rospy.Subscriber(
-        	config.depth_image_topic, Image,
+            config.depth_image_topic, Image,
                 self.sensor_depth_callback, queue_size=1)
         print('subscribed to {}'.format(config.depth_image_topic))
 
@@ -126,19 +126,19 @@ class DetectionWithProjection:
         return txmin, tymin, txmax, tymax
 
     def calculate_depth(self, xmin, ymin, xmax, ymax, dimg):
-	dimg_sliced = np.array(dimg)[int(xmin):int(xmax),int(ymin):int(ymax)]
-	z0 = np.mean(dimg_sliced)
+        dimg_sliced = np.array(dimg)[int(xmin):int(xmax), int(ymin):int(ymax)]
+        z0 = np.mean(dimg_sliced)
         # mm to m
-	return z0/1000.0
+        return z0 / 1000.0
 
     def detect_objects(self):
         if self.img_msg is None:
             print('no input stream')
             return list()
 
-	if self.depth_img_msg is None:
-	    print('no input depth stream')
-	    return list()
+    if self.depth_img_msg is None:
+        print('no input depth stream')
+        return list()
 
         if self.net is None:
             self.init_retinanet()
@@ -147,7 +147,7 @@ class DetectionWithProjection:
             self.load_label_map()
 
         img = PILImage.fromarray(self.img_msg.copy())
-	depth_img = PILImage.fromarray(self.depth_img_msg.copy())
+    depth_img = PILImage.fromarray(self.depth_img_msg.copy())
         w, h = img.size
 
         x = self.transform(img)
