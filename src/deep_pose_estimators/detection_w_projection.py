@@ -55,27 +55,27 @@ class DetectionWithProjection:
         self.init_ros_subscribers()
 
         self.pub_img = rospy.Publisher(
-                '{}/detection_image'.format(self.title),
-                Image,
-                queue_size=2)
+            '{}/detection_image'.format(self.title),
+            Image,
+            queue_size=2)
         self.bridge = CvBridge()
 
     def init_ros_subscribers(self):
         # subscribe image topic
         if config.msg_type == 'compressed':
             self.subscriber = rospy.Subscriber(
-                    config.image_topic, CompressedImage,
-                    self.sensor_compressed_image_callback, queue_size=1)
+                config.image_topic, CompressedImage,
+                self.sensor_compressed_image_callback, queue_size=1)
         else:  # raw
             self.subscriber = rospy.Subscriber(
-                    config.image_topic, Image,
-                    self.sensor_image_callback, queue_size=1)
+                config.image_topic, Image,
+                self.sensor_image_callback, queue_size=1)
         print('subscribed to {}'.format(config.image_topic))
 
         # subscribe depth topic, only raw for now
         self.subscriber = rospy.Subscriber(
             config.depth_image_topic, Image,
-                self.sensor_depth_callback, queue_size=1)
+            self.sensor_depth_callback, queue_size=1)
         print('subscribed to {}'.format(config.depth_image_topic))
 
         # subscribe camera info topic
@@ -128,17 +128,16 @@ class DetectionWithProjection:
     def calculate_depth(self, xmin, ymin, xmax, ymax, dimg):
         dimg_sliced = np.array(dimg)[int(xmin):int(xmax), int(ymin):int(ymax)]
         z0 = np.mean(dimg_sliced)
-        # mm to m
-        return z0 / 1000.0
+        return z0 / 1000.0  # mm to m
 
     def detect_objects(self):
         if self.img_msg is None:
             print('no input stream')
             return list()
 
-    if self.depth_img_msg is None:
-        print('no input depth stream')
-        return list()
+        if self.depth_img_msg is None:
+            print('no input depth stream')
+            return list()
 
         if self.net is None:
             self.init_retinanet()
@@ -147,7 +146,7 @@ class DetectionWithProjection:
             self.load_label_map()
 
         img = PILImage.fromarray(self.img_msg.copy())
-    depth_img = PILImage.fromarray(self.depth_img_msg.copy())
+        depth_img = PILImage.fromarray(self.depth_img_msg.copy())
         w, h = img.size
 
         x = self.transform(img)
