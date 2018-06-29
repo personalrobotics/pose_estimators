@@ -8,9 +8,6 @@
     "camera_tf": "camera_color_optical_frame",
     "camera_info_topic": "/camera/color/camera_info",
 
-    "camera_to_table": 0.34, 
-    "camera_to_table_old": 0.352, 
-
     "num_classes": 49,
     "checkpoint": "/home/herb/Workspace/ada_ws/src/deep_pose_estimators/src/deep_pose_estimators/checkpoint/food_ckpt.pth",
     "label_map": "/home/herb/Workspace/ada_ws/src/deep_pose_estimators/src/deep_pose_estimators/datasets/food_label_map.pkl",

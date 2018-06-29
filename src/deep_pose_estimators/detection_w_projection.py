@@ -179,9 +179,6 @@ class DetectionWithProjection:
         cam_cx = camera_matrix[0, 2]
         cam_cy = camera_matrix[1, 2]
 
-        # z0 = (config.camera_to_table /
-        #       (np.cos(np.radians(90 - self.camera_tilt)) + 0.1 ** 10))
-        #z0 = config.camera_to_table
         rvec = np.array([0.0, 0.0, 0.0])
         tan_theta = np.tan((self.camera_tilt - 90) * np.pi / 180.)
 
