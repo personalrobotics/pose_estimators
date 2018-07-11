@@ -3,11 +3,12 @@
 
     "image_topic": "/camera/color/image_raw/compressed",
     "msg_type": "compressed",
+    "depth_image_topic": "/camera/aligned_depth_to_color/image_raw",
+    "depth_msg_type": "raw",
     "camera_tf": "camera_color_optical_frame",
     "camera_info_topic": "/camera/color/camera_info",
 
     "camera_to_table": 0.335, 
-    "camera_to_table_old": 0.352, 
 
     "num_classes": 49,
     "checkpoint": "/home/herb/Workspace/ada_ws/src/deep_pose_estimators/src/deep_pose_estimators/checkpoint/food_ckpt.pth",
