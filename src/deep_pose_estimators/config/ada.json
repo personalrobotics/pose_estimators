@@ -6,7 +6,7 @@
     "camera_tf": "camera_color_optical_frame",
     "camera_info_topic": "/camera/color/camera_info",
 
-    "camera_to_table": 0.34, 
+    "camera_to_table": 0.335, 
     "camera_to_table_old": 0.352, 
 
     "num_classes": 49,

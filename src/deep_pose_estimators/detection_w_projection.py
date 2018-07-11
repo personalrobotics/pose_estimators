@@ -49,7 +49,7 @@ class DetectionWithProjection:
         self.label_map = None
         self.encoder = None
 
-        self.camera_tilt = 1e-5
+        self.camera_tilt = 0#-np.degrees(0.0763978)
 
         self.init_ros_subscribers()
 
@@ -140,7 +140,7 @@ class DetectionWithProjection:
                 (w, h))
 
         if boxes is None or len(boxes) == 0:
-            print('no detection')
+            #print('no detection')
             msg_img = self.bridge.cv2_to_imgmsg(np.array(img), "rgb8")
             self.pub_img.publish(msg_img)
             return list()
@@ -157,34 +157,36 @@ class DetectionWithProjection:
         cam_fy = camera_matrix[1, 1]
         cam_cx = camera_matrix[0, 2]
         cam_cy = camera_matrix[1, 2]
+        # cam_cx = 320
+        # cam_cy = 240
 
         # z0 = (config.camera_to_table /
         #       (np.cos(np.radians(90 - self.camera_tilt)) + 0.1 ** 10))
         z0 = config.camera_to_table
         rvec = np.array([0.0, 0.0, 0.0])
-        tan_theta = np.tan((self.camera_tilt - 90) * np.pi / 180.)
+        # tan_theta = np.tan((self.camera_tilt - 90) * np.pi / 180.)
 
         # box_idx_list = self.cleanup_detections(boxes, scores)
 
         detections = list()
 
-        # for box_idx in box_idx_list:
         for box_idx in range(len(boxes)):
             t_class = labels[box_idx].item()
             t_class_name = self.label_map[t_class]
 
             txmin, tymin, txmax, tymax = boxes[box_idx].numpy()
-
             pt = [(txmax + txmin) * 0.5, (tymax + tymin) * 0.5]
-            y0 = (z0 / cam_fy) * (pt[0] - cam_cy)
-            tan_alpha = -y0 / z0
-            tz = z0 - (y0 / (tan_theta - tan_alpha))
-            tx = (tz / cam_fx) * (pt[1] - cam_cx) + 0.045
-            ty = (tz / cam_fy) * (pt[0] - cam_cy) - 0.085
-            tvec = np.array([ty, tx, tz])
+
+            # y0 = (z0 / cam_fy) * (pt[1] - cam_cy)
+            # tan_alpha = -y0 / z0
+            tz = z0  # - (y0 / (tan_theta - tan_alpha))
+            tx = (tz / cam_fx) * (pt[0] - cam_cx)
+            ty = (tz / cam_fy) * (pt[1] - cam_cy)
+            tvec = np.array([tx, ty, tz])
 
             rst_vecs = [rvec, tvec, t_class_name, t_class]
             detections.append(rst_vecs)
+
 
         # visualize detections
         draw = ImageDraw.Draw(img, 'RGBA')
@@ -309,7 +311,7 @@ def run_detection():
 
             pub_pose.publish(poses)
 
-            rospy.loginfo(update_timestamp_str)
+            #rospy.loginfo(update_timestamp_str)
             rate.sleep()
 
     except rospy.ROSInterruptException:
