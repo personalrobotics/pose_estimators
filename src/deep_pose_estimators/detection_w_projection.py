@@ -127,7 +127,15 @@ class DetectionWithProjection:
 
     def calculate_depth(self, xmin, ymin, xmax, ymax, dimg):
         dimg_sliced = np.array(dimg)[int(xmin):int(xmax), int(ymin):int(ymax)]
-        z0 = np.mean(dimg_sliced)
+        summed_depths = 0
+        count = 0
+        for depth in dimg_sliced.flatten():
+            if depth > 0:
+                summed_depths += depth
+                count +=1
+        if count == 0:
+            return -1
+        z0 = summed_depths / count
         return z0 / 1000.0  # mm to m
 
     def detect_objects(self):
@@ -196,6 +204,8 @@ class DetectionWithProjection:
             txmin, tymin, txmax, tymax = boxes[box_idx].numpy()
 
             z0 = self.calculate_depth(txmin, tymin, txmax, tymax, depth_img)
+            if z0 < 0:
+                continue
 
             pt = [(txmax + txmin) * 0.5, (tymax + tymin) * 0.5]
 
