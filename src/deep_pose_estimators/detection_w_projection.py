@@ -7,6 +7,7 @@ from __future__ import with_statement
 import numpy as np
 import os
 import sys
+import json
 import cv2
 import rospy
 import rospkg
@@ -189,12 +190,12 @@ class DetectionWithProjection:
         # cam_cy = 240
 
         rvec = np.array([0.0, 0.0, 0.0])
-        
+
         # z0 = (config.camera_to_table /
         #       (np.cos(np.radians(90 - self.camera_tilt)) + 0.1 ** 10))
         z0 = config.camera_to_table
         rvec = np.array([0.0, 0.0, 0.0])
-        
+
         detections = list()
 
         for box_idx in range(len(boxes)):
@@ -317,12 +318,15 @@ def run_detection():
                     else:
                         item_dict[item[2]] = 1
 
+                    obj_info = dict()
+                    obj_info['id'] = '{}_{}'.format(item[2], item_dict[item[2]])
+
                     pose = Marker()
                     pose.header.frame_id = config.camera_tf
                     pose.header.stamp = rospy.Time.now()
                     pose.id = item[3]
-                    pose.text = 'food_item'
-                    pose.ns = '{}_{}'.format(item[2], item_dict[item[2]])
+                    pose.ns = 'food_item'
+                    pose.text = json.dumps(obj_info)
                     pose.type = Marker.CUBE
                     pose.pose.position.x = item[1][0]
                     pose.pose.position.y = item[1][1]
