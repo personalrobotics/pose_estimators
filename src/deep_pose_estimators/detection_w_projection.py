@@ -7,6 +7,7 @@ from __future__ import with_statement
 import numpy as np
 import os
 import sys
+import json
 import cv2
 import rospy
 import rospkg
@@ -47,6 +48,7 @@ class DetectionWithProjection:
         self.title = title
 
         self.img_msg = None
+        self.depth_img_msg = None
         self.net = None
         self.transform = None
         self.label_map = None
@@ -60,22 +62,28 @@ class DetectionWithProjection:
         self.init_ros_subscribers()
 
         self.pub_img = rospy.Publisher(
-                '{}/detection_image'.format(self.title),
-                Image,
-                queue_size=2)
+            '{}/detection_image'.format(self.title),
+            Image,
+            queue_size=2)
         self.bridge = CvBridge()
 
     def init_ros_subscribers(self):
         # subscribe image topic
         if config.msg_type == 'compressed':
             self.subscriber = rospy.Subscriber(
-                    config.image_topic, CompressedImage,
-                    self.sensor_compressed_image_callback, queue_size=1)
+                config.image_topic, CompressedImage,
+                self.sensor_compressed_image_callback, queue_size=1)
         else:  # raw
             self.subscriber = rospy.Subscriber(
-                    config.image_topic, Image,
-                    self.sensor_image_callback, queue_size=1)
+                config.image_topic, Image,
+                self.sensor_image_callback, queue_size=1)
         print('subscribed to {}'.format(config.image_topic))
+
+        # subscribe depth topic, only raw for now
+        self.subscriber = rospy.Subscriber(
+            config.depth_image_topic, Image,
+            self.sensor_depth_callback, queue_size=1)
+        print('subscribed to {}'.format(config.depth_image_topic))
 
         # subscribe camera info topic
         self.subscriber = rospy.Subscriber(
@@ -90,6 +98,9 @@ class DetectionWithProjection:
 
     def sensor_image_callback(self, ros_data):
         self.img_msg = self.bridge.imgmsg_to_cv2(ros_data, 'rgb8')
+
+    def sensor_depth_callback(self, ros_data):
+        self.depth_img_msg = self.bridge.imgmsg_to_cv2(ros_data, '16UC1')
 
     def camera_info_callback(self, ros_data):
         self.camera_info = ros_data
@@ -132,9 +143,26 @@ class DetectionWithProjection:
         tymax = int(box[3] * img_shape[1])
         return txmin, tymin, txmax, tymax
 
+    def calculate_depth(self, xmin, ymin, xmax, ymax, dimg):
+        dimg_sliced = np.array(dimg)[int(xmin):int(xmax), int(ymin):int(ymax)]
+        summed_depths = 0
+        count = 0
+        for depth in dimg_sliced.flatten():
+            if depth > 0:
+                summed_depths += depth
+                count +=1
+        if count == 0:
+            return -1
+        z0 = summed_depths / count
+        return z0 / 1000.0  # mm to m
+
     def detect_objects(self):
         if self.img_msg is None:
             print('no input stream')
+            return list()
+
+        if self.depth_img_msg is None:
+            print('no input depth stream')
             return list()
 
         if self.net is None:
@@ -147,6 +175,7 @@ class DetectionWithProjection:
             self.load_label_map()
 
         img = PILImage.fromarray(self.img_msg.copy())
+        depth_img = PILImage.fromarray(self.depth_img_msg.copy())
         w, h = img.size
 
         x = self.transform(img)
@@ -160,7 +189,7 @@ class DetectionWithProjection:
                 (w, h))
 
         if boxes is None or len(boxes) == 0:
-            print('no detection')
+            #print('no detection')
             msg_img = self.bridge.cv2_to_imgmsg(np.array(img), "rgb8")
             self.pub_img.publish(msg_img)
             return list()
@@ -177,18 +206,18 @@ class DetectionWithProjection:
         cam_fy = camera_matrix[1, 1]
         cam_cx = camera_matrix[0, 2]
         cam_cy = camera_matrix[1, 2]
+        # cam_cx = 320
+        # cam_cy = 240
+
+        rvec = np.array([0.0, 0.0, 0.0])
 
         # z0 = (config.camera_to_table /
         #       (np.cos(np.radians(90 - self.camera_tilt)) + 0.1 ** 10))
         z0 = config.camera_to_table
         rvec = np.array([0.0, 0.0, 0.0])
-        tan_theta = np.tan((self.camera_tilt - 90) * np.pi / 180.)
-
-        # box_idx_list = self.cleanup_detections(boxes, scores)
 
         detections = list()
 
-        # for box_idx in box_idx_list:
         for box_idx in range(len(boxes)):
             t_class = labels[box_idx].item()
             t_class_name = self.label_map[t_class]
@@ -198,13 +227,18 @@ class DetectionWithProjection:
             cropped_img = img[tymin:tymax, txmin:txmax]
             pred_position, pred_angle = self.spnet(cropped_img)
 
-            pt = [txmax, (tymax + tymin) * 0.5]
-            y0 = (z0 / cam_fy) * (pt[0] - cam_cy)
-            tan_alpha = -y0 / z0
-            tz = z0 - (y0 / (tan_theta - tan_alpha))
-            tx = (tz / cam_fx) * (pt[1] - cam_cx) + 0.045
-            ty = (tz / cam_fy) * (pt[0] - cam_cy) - 0.085
-            tvec = np.array([ty, tx, tz])
+            z0 = self.calculate_depth(txmin, tymin, txmax, tymax, depth_img)
+            if z0 < 0:
+                continue
+
+            pt = [(txmax + txmin) * 0.5, (tymax + tymin) * 0.5]
+
+            # y0 = (z0 / cam_fy) * (pt[1] - cam_cy)
+            # tan_alpha = -y0 / z0
+            tz = z0  # - (y0 / (tan_theta - tan_alpha))
+            tx = (tz / cam_fx) * (pt[0] - cam_cx)
+            ty = (tz / cam_fy) * (pt[1] - cam_cy)
+            tvec = np.array([tx, ty, tz])
 
             rst_vecs = [rvec, tvec, t_class_name, t_class]
             detections.append(rst_vecs)
@@ -306,12 +340,19 @@ def run_detection():
                     else:
                         item_dict[item[2]] = 1
 
+                    obj_info = dict()
+                    obj_info['id'] = '{}_{}'.format(item[2], item_dict[item[2]])
+
                     pose = Marker()
                     pose.header.frame_id = config.camera_tf
                     pose.header.stamp = rospy.Time.now()
                     pose.id = item[3]
                     pose.ns = 'food_item'
+<<<<<<< HEAD
                     pose.text = '{}_{}'.format(item[2], item_dict[item[2]])
+=======
+                    pose.text = json.dumps(obj_info)
+>>>>>>> 08675e53c8826e3ca7d4eb60719a07fd0a6c9aa2
                     pose.type = Marker.CUBE
                     pose.pose.position.x = item[1][0]
                     pose.pose.position.y = item[1][1]
@@ -332,7 +373,7 @@ def run_detection():
 
             pub_pose.publish(poses)
 
-            rospy.loginfo(update_timestamp_str)
+            #rospy.loginfo(update_timestamp_str)
             rate.sleep()
 
     except rospy.ROSInterruptException:
