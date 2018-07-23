@@ -143,17 +143,22 @@ class DetectionWithProjection:
         tymax = int(box[3] * img_shape[1])
         return txmin, tymin, txmax, tymax
 
-    def calculate_depth(self, xmin, ymin, xmax, ymax, dimg):
+    def calculate_depth_from_depth_image(self, xmin, ymin, xmax, ymax, dimg):
         dimg_sliced = np.array(dimg)[int(xmin):int(xmax), int(ymin):int(ymax)]
-        summed_depths = 0
-        count = 0
-        for depth in dimg_sliced.flatten():
-            if depth > 0:
-                summed_depths += depth
-                count +=1
-        if count == 0:
+        depth = dimg_sliced.flatten()
+        depth = depth[depth > 0]
+        if depth is None or len(depth) == 0:
             return -1
-        z0 = summed_depths / count
+        z0 = np.mean(depth)
+        return z0 / 1000.0  # mm to m
+
+    def calculate_depth(self, depth_img):
+        depth = depth_img.flatten()
+        depth = depth[depth > 0]
+        depth = depth[abs(depth - np.mean(depth)) < np.std(depth)]
+        if depth is None or len(depth) == 0:
+            return -1
+        z0 = np.mean(depth)
         return z0 / 1000.0  # mm to m
 
     def detect_objects(self):
@@ -175,7 +180,8 @@ class DetectionWithProjection:
             self.load_label_map()
 
         img = PILImage.fromarray(self.img_msg.copy())
-        depth_img = PILImage.fromarray(self.depth_img_msg.copy())
+        depth_img = self.depth_img_msg.copy()
+        # depth_img = PILImage.fromarray(depth)
         w, h = img.size
 
         x = self.transform(img)
@@ -227,7 +233,9 @@ class DetectionWithProjection:
             cropped_img = img[tymin:tymax, txmin:txmax]
             pred_position, pred_angle = self.spnet(cropped_img)
 
-            z0 = self.calculate_depth(txmin, tymin, txmax, tymax, depth_img)
+            cropped_depth = depth_img[tymin:tymax, txmin:txmax]
+
+            z0 = self.calculate_depth(cropped_depth)
             if z0 < 0:
                 continue
 
@@ -348,11 +356,7 @@ def run_detection():
                     pose.header.stamp = rospy.Time.now()
                     pose.id = item[3]
                     pose.ns = 'food_item'
-<<<<<<< HEAD
-                    pose.text = '{}_{}'.format(item[2], item_dict[item[2]])
-=======
                     pose.text = json.dumps(obj_info)
->>>>>>> 08675e53c8826e3ca7d4eb60719a07fd0a6c9aa2
                     pose.type = Marker.CUBE
                     pose.pose.position.x = item[1][0]
                     pose.pose.position.y = item[1][1]
