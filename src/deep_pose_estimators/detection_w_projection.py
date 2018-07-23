@@ -29,6 +29,9 @@ from cv_bridge import CvBridge
 from model.retinanet import RetinaNet
 from utils.encoder import DataEncoder
 
+sys.path.append('../')
+from bite_selection_package.model.spnet import SPNet
+
 
 config = None  # configurations saved in a json file (e.g. config/ada.json)
 
@@ -48,6 +51,9 @@ class DetectionWithProjection:
         self.transform = None
         self.label_map = None
         self.encoder = None
+
+        self.spnet = None
+        self.spnet_transform = None
 
         self.camera_tilt = 1e-5
 
@@ -102,6 +108,17 @@ class DetectionWithProjection:
 
         self.encoder = DataEncoder()
 
+    def init_spnet(self):
+        self.spnet = SPNet()
+        ckpt = torch.load(config.spnet_checkpoint)
+        self.spnet.load_state_dict(ckpt['net'])
+        self.spnet.eval()
+        self.spnet.cuda()
+
+        self.spnet_transform = transforms.Compose([
+            transforms.ToTensor()])
+            # transforms.Normalize((0.562, 0.370, 0.271), (0.332, 0.302, 0.281))])
+
     def load_label_map(self):
         with open(config.label_map, 'r') as f:
             label_map = pickle.load(f)
@@ -122,6 +139,9 @@ class DetectionWithProjection:
 
         if self.net is None:
             self.init_retinanet()
+
+        if self.spnet is None:
+            self.init_spnet()
 
         if self.label_map is None:
             self.load_label_map()
@@ -174,6 +194,9 @@ class DetectionWithProjection:
             t_class_name = self.label_map[t_class]
 
             txmin, tymin, txmax, tymax = boxes[box_idx].numpy()
+
+            cropped_img = img[tymin:tymax, txmin:txmax]
+            pred_position, pred_angle = self.spnet(cropped_img)
 
             pt = [txmax, (tymax + tymin) * 0.5]
             y0 = (z0 / cam_fy) * (pt[0] - cam_cy)
@@ -287,8 +310,8 @@ def run_detection():
                     pose.header.frame_id = config.camera_tf
                     pose.header.stamp = rospy.Time.now()
                     pose.id = item[3]
-                    pose.text = 'food_item'
-                    pose.ns = '{}_{}'.format(item[2], item_dict[item[2]])
+                    pose.ns = 'food_item'
+                    pose.text = '{}_{}'.format(item[2], item_dict[item[2]])
                     pose.type = Marker.CUBE
                     pose.pose.position.x = item[1][0]
                     pose.pose.position.y = item[1][1]

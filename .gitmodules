@@ -1,0 +1,3 @@
+[submodule "src/bite_selection_package"]
+	path = src/bite_selection_package
+	url = https://github.com/personalrobotics/bite_selection_package.git
