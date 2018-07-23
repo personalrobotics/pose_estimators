@@ -239,7 +239,9 @@ class DetectionWithProjection:
             if z0 < 0:
                 continue
 
-            pt = [(txmax + txmin) * 0.5, (tymax + tymin) * 0.5]
+            txoff = (txmax - txmin) * pred_position[0]
+            tyoff = (tymax - tymin) * pred_position[1]
+            pt = [txmin + txoff, tymin + tyoff]
 
             # y0 = (z0 / cam_fy) * (pt[1] - cam_cy)
             # tan_alpha = -y0 / z0
