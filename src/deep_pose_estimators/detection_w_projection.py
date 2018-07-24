@@ -29,6 +29,7 @@ from cv_bridge import CvBridge
 
 from model.retinanet import RetinaNet
 from utils.encoder import DataEncoder
+from utils import utils
 
 sys.path.append('../')
 from bite_selection_package.model.spnet import SPNet
@@ -44,7 +45,7 @@ class DetectionWithProjection:
             self.point3f_list = point3f_list
             self.descriptors = descriptors
 
-    def __init__(self, title='DetectionWithProjection'):
+    def __init__(self, title='DetectionWithProjection', use_spnet=True):
         self.title = title
 
         self.img_msg = None
@@ -54,6 +55,7 @@ class DetectionWithProjection:
         self.label_map = None
         self.encoder = None
 
+        self.use_spnet = use_spnet
         self.spnet = None
         self.spnet_transform = None
 
@@ -173,7 +175,7 @@ class DetectionWithProjection:
         if self.net is None:
             self.init_retinanet()
 
-        if self.spnet is None:
+        if self.use_spnet and self.spnet is None:
             self.init_spnet()
 
         if self.label_map is None:
@@ -220,7 +222,6 @@ class DetectionWithProjection:
         # z0 = (config.camera_to_table /
         #       (np.cos(np.radians(90 - self.camera_tilt)) + 0.1 ** 10))
         z0 = config.camera_to_table
-        rvec = np.array([0.0, 0.0, 0.0])
 
         detections = list()
 
@@ -230,18 +231,25 @@ class DetectionWithProjection:
 
             txmin, tymin, txmax, tymax = boxes[box_idx].numpy()
 
-            cropped_img = img[tymin:tymax, txmin:txmax]
-            pred_position, pred_angle = self.spnet(cropped_img)
-
             cropped_depth = depth_img[tymin:tymax, txmin:txmax]
 
             z0 = self.calculate_depth(cropped_depth)
             if z0 < 0:
                 continue
 
+            if self.use_spnet:
+                cropped_img = img[tymin:tymax, txmin:txmax]
+                pred_position, pred_angle = self.spnet(cropped_img)
+            else:
+                pred_position = np.array([0.5, 0.5])
+                pred_angle = 0.0
+
             txoff = (txmax - txmin) * pred_position[0]
             tyoff = (tymax - tymin) * pred_position[1]
             pt = [txmin + txoff, tymin + tyoff]
+
+            x, y, z, w = utils.angles_to_quaternion(pred_angle, 0., 0.)
+            rvec = np.array([x, y, z, w])
 
             # y0 = (z0 / cam_fy) * (pt[1] - cam_cy)
             # tan_alpha = -y0 / z0
@@ -327,7 +335,9 @@ def run_detection():
     os.environ['CUDA_VISIBLE_DEVICES'] = config.gpus
 
     rospy.init_node(config.node_title)
-    rcnn_projection = DetectionWithProjection(title=config.node_title)
+    rcnn_projection = DetectionWithProjection(
+        title=config.node_title,
+        use_spnet=True)
 
     try:
         pub_pose = rospy.Publisher(
@@ -366,7 +376,7 @@ def run_detection():
                     pose.pose.orientation.x = item[0][0]
                     pose.pose.orientation.y = item[0][1]
                     pose.pose.orientation.z = item[0][2]
-                    pose.pose.orientation.w = 1
+                    pose.pose.orientation.w = item[0][3]
                     pose.scale.x = 0.04
                     pose.scale.y = 0.04
                     pose.scale.z = 0.04
