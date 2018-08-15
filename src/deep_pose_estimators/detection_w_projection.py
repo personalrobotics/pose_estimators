@@ -27,6 +27,11 @@ from sensor_msgs.msg import CompressedImage, Image, CameraInfo
 
 from cv_bridge import CvBridge
 
+rospack = rospkg.RosPack()
+pkg_base = rospack.get_path('deep_pose_estimators')
+
+external_path = os.path.join(pkg_base, 'src/deep_pose_estimators/external/pytorch-retinanet')
+sys.path.append(external_path)
 from model.retinanet import RetinaNet
 from utils.encoder import DataEncoder
 
@@ -51,7 +56,7 @@ class DetectionWithProjection:
         self.label_map = None
         self.encoder = None
 
-        self.camera_tilt = 0#-np.degrees(0.0763978)
+        self.camera_tilt = 0  # -np.degrees(0.0763978)
 
         self.init_ros_subscribers()
 
@@ -87,8 +92,8 @@ class DetectionWithProjection:
 
     def sensor_compressed_image_callback(self, ros_data):
         np_arr = np.fromstring(ros_data.data, np.uint8)
-        self.img_msg = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-        self.img_msg = cv2.cvtColor(self.img_msg, cv2.COLOR_BGR2RGB)
+        new_msg = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        self.img_msg = cv2.cvtColor(new_msg, cv2.COLOR_BGR2RGB)
 
     def sensor_image_callback(self, ros_data):
         self.img_msg = self.bridge.imgmsg_to_cv2(ros_data, 'rgb8')
@@ -105,12 +110,14 @@ class DetectionWithProjection:
         self.net.load_state_dict(ckpt['net'])
         self.net.eval()
         self.net.cuda()
+        
+        print('Loaded RetinaNet.')
+        # print(self.net)
 
         self.transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
         ])
-
         self.encoder = DataEncoder()
 
     def load_label_map(self):
@@ -128,7 +135,7 @@ class DetectionWithProjection:
 
     def calculate_depth(self, xmin, ymin, xmax, ymax, dimg):
         dimg_sliced = np.array(dimg)[int(xmin):int(xmax), int(ymin):int(ymax)]
-        summed_depths = 0
+        summed_depths = 0.0
         count = 0
         for depth in dimg_sliced.flatten():
             if depth > 0:
@@ -169,7 +176,7 @@ class DetectionWithProjection:
                 (w, h))
 
         if boxes is None or len(boxes) == 0:
-            #print('no detection')
+            # print('no detection')
             msg_img = self.bridge.cv2_to_imgmsg(np.array(img), "rgb8")
             self.pub_img.publish(msg_img)
             return list()
@@ -206,6 +213,7 @@ class DetectionWithProjection:
 
             z0 = self.calculate_depth(txmin, tymin, txmax, tymax, depth_img)
             if z0 < 0:
+                print("skipping " + t_class_name + " because depth invalid")
                 continue
 
             pt = [(txmax + txmin) * 0.5, (tymax + tymin) * 0.5]
@@ -219,7 +227,6 @@ class DetectionWithProjection:
 
             rst_vecs = [rvec, tvec, t_class_name, t_class]
             detections.append(rst_vecs)
-
 
         # visualize detections
         draw = ImageDraw.Draw(img, 'RGBA')
@@ -266,9 +273,6 @@ def load_configs():
     if config_filename is None:
         print_usage('Invalid arguments')
         return None
-
-    rospack = rospkg.RosPack()
-    pkg_base = rospack.get_path('deep_pose_estimators')
 
     config_filepath = os.path.join(
         pkg_base, 'src/deep_pose_estimators/config', config_filename)

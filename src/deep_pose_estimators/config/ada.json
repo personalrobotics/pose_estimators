@@ -8,11 +8,11 @@
     "camera_tf": "camera_color_optical_frame",
     "camera_info_topic": "/camera/color/camera_info",
 
-    "camera_to_table": 0.335, 
+    "camera_to_table": 0.335,
 
-    "num_classes": 49,
-    "checkpoint": "/home/herb/Workspace/ada_ws/src/deep_pose_estimators/src/deep_pose_estimators/checkpoint/food_ckpt.pth",
-    "label_map": "/home/herb/Workspace/ada_ws/src/deep_pose_estimators/src/deep_pose_estimators/datasets/food_label_map.pkl",
+    "num_classes": 17,
+    "checkpoint": "/home/herb/Workspace/ada_ws/src/deep_pose_estimators/src/deep_pose_estimators/external/pytorch-retinanet/checkpoint/food_ckpt.pth",
+    "label_map": "/home/herb/Workspace/ada_ws/src/deep_pose_estimators/src/deep_pose_estimators/external/pytorch-retinanet/datasets/food_label_map.pkl",
 
     "node_title": "deep_pose",
     "frequency": 20

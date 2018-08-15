@@ -1,0 +1,4 @@
+[submodule "src/deep_pose_estimators/external/pytorch-retinanet"]
+	path = src/deep_pose_estimators/external/pytorch-retinanet
+	url = https://github.com/yskim041/pytorch-retinanet.git
+	branch = foods
