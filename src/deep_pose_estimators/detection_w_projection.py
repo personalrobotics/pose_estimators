@@ -30,7 +30,8 @@ from cv_bridge import CvBridge
 rospack = rospkg.RosPack()
 pkg_base = rospack.get_path('deep_pose_estimators')
 
-external_path = os.path.join(pkg_base, 'src/deep_pose_estimators/external/pytorch-retinanet')
+external_path = os.path.join(
+    pkg_base, 'src/deep_pose_estimators/external/pytorch-retinanet')
 sys.path.append(external_path)
 from model.retinanet import RetinaNet
 from utils.encoder import DataEncoder
@@ -110,7 +111,7 @@ class DetectionWithProjection:
         self.net.load_state_dict(ckpt['net'])
         self.net.eval()
         self.net.cuda()
-        
+
         print('Loaded RetinaNet.')
         # print(self.net)
 
@@ -134,7 +135,7 @@ class DetectionWithProjection:
         return txmin, tymin, txmax, tymax
 
     def calculate_depth(self, xmin, ymin, xmax, ymax, dimg):
-        dimg_sliced = np.array(dimg)[int(xmin):int(xmax), int(ymin):int(ymax)]
+        dimg_sliced = np.array(dimg)[int(ymin):int(ymax), int(xmin):int(xmax)]
         summed_depths = 0.0
         count = 0
         for depth in dimg_sliced.flatten():
@@ -174,6 +175,15 @@ class DetectionWithProjection:
                 loc_preds.cpu().data.squeeze(),
                 cls_preds.cpu().data.squeeze(),
                 (w, h))
+
+        #visualize depth
+        draw = ImageDraw.Draw(img, 'RGBA')
+        depth_pixels = list(depth_img.getdata())
+        depth_pixels = [depth_pixels[i * w:(i + 1) * w] for i in xrange(h)]
+        for x in range(0, img.size[0]):
+            for y in range(0, img.size[1]):
+                if (depth_pixels[y][x] < 0.001):
+                    draw.point((x,y), fill=(0,0,0))
 
         if boxes is None or len(boxes) == 0:
             # print('no detection')
