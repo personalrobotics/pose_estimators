@@ -2,6 +2,6 @@
 	path = src/deep_pose_estimators/external/pytorch-retinanet
 	url = https://github.com/yskim041/pytorch-retinanet.git
 	branch = foods
-[submodule "src/bite_selection_package"]
-	path = src/bite_selection_package
+[submodule "src/deep_pose_estimators/external/bite_selection_package"]
+	path = src/deep_pose_estimators/external/bite_selection_package
 	url = https://github.com/personalrobotics/bite_selection_package.git
