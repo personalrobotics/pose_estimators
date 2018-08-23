@@ -35,6 +35,10 @@ external_path = os.path.join(
 sys.path.append(external_path)
 from model.retinanet import RetinaNet
 from utils.encoder import DataEncoder
+from utils import utils
+
+sys.path.append('../')
+from bite_selection_package.model.spnet import SPNet
 
 
 config = None  # configurations saved in a json file (e.g. config/ada.json)
@@ -47,7 +51,7 @@ class DetectionWithProjection:
             self.point3f_list = point3f_list
             self.descriptors = descriptors
 
-    def __init__(self, title='DetectionWithProjection'):
+    def __init__(self, title='DetectionWithProjection', use_spnet=True):
         self.title = title
 
         self.img_msg = None
@@ -57,7 +61,11 @@ class DetectionWithProjection:
         self.label_map = None
         self.encoder = None
 
-        self.camera_tilt = 0  # -np.degrees(0.0763978)
+        self.use_spnet = use_spnet
+        self.spnet = None
+        self.spnet_transform = None
+
+        self.camera_tilt = 1e-5
 
         self.init_ros_subscribers()
 
@@ -121,6 +129,17 @@ class DetectionWithProjection:
         ])
         self.encoder = DataEncoder()
 
+    def init_spnet(self):
+        self.spnet = SPNet()
+        ckpt = torch.load(config.spnet_checkpoint)
+        self.spnet.load_state_dict(ckpt['net'])
+        self.spnet.eval()
+        self.spnet.cuda()
+
+        self.spnet_transform = transforms.Compose([
+            transforms.ToTensor()])
+            # transforms.Normalize((0.562, 0.370, 0.271), (0.332, 0.302, 0.281))])
+
     def load_label_map(self):
         with open(config.label_map, 'r') as f:
             label_map = pickle.load(f)
@@ -134,17 +153,22 @@ class DetectionWithProjection:
         tymax = int(box[3] * img_shape[1])
         return txmin, tymin, txmax, tymax
 
-    def calculate_depth(self, xmin, ymin, xmax, ymax, dimg):
-        dimg_sliced = np.array(dimg)[int(ymin):int(ymax), int(xmin):int(xmax)]
-        summed_depths = 0.0
-        count = 0
-        for depth in dimg_sliced.flatten():
-            if depth > 0:
-                summed_depths += depth
-                count +=1
-        if count == 0:
+    def calculate_depth_from_depth_image(self, xmin, ymin, xmax, ymax, dimg):
+        dimg_sliced = np.array(dimg)[int(xmin):int(xmax), int(ymin):int(ymax)]
+        depth = dimg_sliced.flatten()
+        depth = depth[depth > 0]
+        if depth is None or len(depth) == 0:
             return -1
-        z0 = summed_depths / count
+        z0 = np.mean(depth)
+        return z0 / 1000.0  # mm to m
+
+    def calculate_depth(self, depth_img):
+        depth = depth_img.flatten()
+        depth = depth[depth > 0]
+        depth = depth[abs(depth - np.mean(depth)) < np.std(depth)]
+        if depth is None or len(depth) == 0:
+            return -1
+        z0 = np.mean(depth)
         return z0 / 1000.0  # mm to m
 
     def detect_objects(self):
@@ -159,11 +183,15 @@ class DetectionWithProjection:
         if self.net is None:
             self.init_retinanet()
 
+        if self.use_spnet and self.spnet is None:
+            self.init_spnet()
+
         if self.label_map is None:
             self.load_label_map()
 
         img = PILImage.fromarray(self.img_msg.copy())
-        depth_img = PILImage.fromarray(self.depth_img_msg.copy())
+        depth_img = self.depth_img_msg.copy()
+        # depth_img = PILImage.fromarray(depth)
         w, h = img.size
 
         x = self.transform(img)
@@ -211,7 +239,6 @@ class DetectionWithProjection:
         # z0 = (config.camera_to_table /
         #       (np.cos(np.radians(90 - self.camera_tilt)) + 0.1 ** 10))
         z0 = config.camera_to_table
-        rvec = np.array([0.0, 0.0, 0.0])
 
         detections = list()
 
@@ -221,12 +248,26 @@ class DetectionWithProjection:
 
             txmin, tymin, txmax, tymax = boxes[box_idx].numpy()
 
-            z0 = self.calculate_depth(txmin, tymin, txmax, tymax, depth_img)
+            cropped_depth = depth_img[tymin:tymax, txmin:txmax]
+
+            z0 = self.calculate_depth(cropped_depth)
             if z0 < 0:
                 print("skipping " + t_class_name + " because depth invalid")
                 continue
 
-            pt = [(txmax + txmin) * 0.5, (tymax + tymin) * 0.5]
+            if self.use_spnet:
+                cropped_img = img[tymin:tymax, txmin:txmax]
+                pred_position, pred_angle = self.spnet(cropped_img)
+            else:
+                pred_position = np.array([0.5, 0.5])
+                pred_angle = 0.0
+
+            txoff = (txmax - txmin) * pred_position[0]
+            tyoff = (tymax - tymin) * pred_position[1]
+            pt = [txmin + txoff, tymin + tyoff]
+
+            x, y, z, w = utils.angles_to_quaternion(pred_angle, 0., 0.)
+            rvec = np.array([x, y, z, w])
 
             # y0 = (z0 / cam_fy) * (pt[1] - cam_cy)
             # tan_alpha = -y0 / z0
@@ -309,7 +350,9 @@ def run_detection():
     os.environ['CUDA_VISIBLE_DEVICES'] = config.gpus
 
     rospy.init_node(config.node_title)
-    rcnn_projection = DetectionWithProjection(title=config.node_title)
+    rcnn_projection = DetectionWithProjection(
+        title=config.node_title,
+        use_spnet=True)
 
     try:
         pub_pose = rospy.Publisher(
@@ -348,7 +391,7 @@ def run_detection():
                     pose.pose.orientation.x = item[0][0]
                     pose.pose.orientation.y = item[0][1]
                     pose.pose.orientation.z = item[0][2]
-                    pose.pose.orientation.w = 1
+                    pose.pose.orientation.w = item[0][3]
                     pose.scale.x = 0.04
                     pose.scale.y = 0.04
                     pose.scale.z = 0.04
