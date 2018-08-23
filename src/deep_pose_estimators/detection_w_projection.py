@@ -30,18 +30,13 @@ from cv_bridge import CvBridge
 rospack = rospkg.RosPack()
 pkg_base = rospack.get_path('deep_pose_estimators')
 
-external_path = os.path.join(
-    pkg_base, 'src/deep_pose_estimators/external/pytorch-retinanet')
-sys.path.append(external_path)
-from model.retinanet import RetinaNet
-from utils.encoder import DataEncoder
-from utils import utils
+sys.path.append(os.path.join(
+    pkg_base, 'src/deep_pose_estimators/external'))
+from pytorch_retinanet.model.retinanet import RetinaNet
+from pytorch_retinanet.utils.encoder import DataEncoder
+from pytorch_retinanet.utils import utils
 
-sys.path.append('../')
 from bite_selection_package.model.spnet import SPNet
-
-
-config = None  # configurations saved in a json file (e.g. config/ada.json)
 
 
 # An application for the food manipulation project
@@ -51,7 +46,7 @@ class DetectionWithProjection:
             self.point3f_list = point3f_list
             self.descriptors = descriptors
 
-    def __init__(self, title='DetectionWithProjection', use_spnet=True):
+    def __init__(self, title='DetectionWithProjection', use_spnet=False):
         self.title = title
 
         self.img_msg = None
@@ -65,8 +60,6 @@ class DetectionWithProjection:
         self.spnet = None
         self.spnet_transform = None
 
-        self.camera_tilt = 1e-5
-
         self.init_ros_subscribers()
 
         self.pub_img = rospy.Publisher(
@@ -77,27 +70,29 @@ class DetectionWithProjection:
 
     def init_ros_subscribers(self):
         # subscribe image topic
-        if config.msg_type == 'compressed':
+        if conf.msg_type == 'compressed':
             self.subscriber = rospy.Subscriber(
-                config.image_topic, CompressedImage,
+                conf.image_topic, CompressedImage,
                 self.sensor_compressed_image_callback, queue_size=1)
         else:  # raw
             self.subscriber = rospy.Subscriber(
-                config.image_topic, Image,
+                conf.image_topic, Image,
                 self.sensor_image_callback, queue_size=1)
-        print('subscribed to {}'.format(config.image_topic))
+        print('subscribed to {}'.format(conf.image_topic))
 
-        # subscribe depth topic, only raw for now
-        self.subscriber = rospy.Subscriber(
-            config.depth_image_topic, Image,
-            self.sensor_depth_callback, queue_size=1)
-        print('subscribed to {}'.format(config.depth_image_topic))
+        if (conf.depth_image_topic is not None and
+                len(conf.depth_image_topic) > 0):
+            # subscribe depth topic, only raw for now
+            self.subscriber = rospy.Subscriber(
+                conf.depth_image_topic, Image,
+                self.sensor_depth_callback, queue_size=1)
+            print('subscribed to {}'.format(conf.depth_image_topic))
 
         # subscribe camera info topic
         self.subscriber = rospy.Subscriber(
-                config.camera_info_topic, CameraInfo,
+                conf.camera_info_topic, CameraInfo,
                 self.camera_info_callback)
-        print('subscribed to {}'.format(config.camera_info_topic))
+        print('subscribed to {}'.format(conf.camera_info_topic))
 
     def sensor_compressed_image_callback(self, ros_data):
         np_arr = np.fromstring(ros_data.data, np.uint8)
@@ -114,24 +109,24 @@ class DetectionWithProjection:
         self.camera_info = ros_data
 
     def init_retinanet(self):
-        self.net = RetinaNet(config.num_classes)
-        ckpt = torch.load(config.checkpoint)
+        self.net = RetinaNet(conf.num_classes)
+        ckpt = torch.load(conf.checkpoint)
         self.net.load_state_dict(ckpt['net'])
         self.net.eval()
         self.net.cuda()
 
         print('Loaded RetinaNet.')
-        # print(self.net)
+        print(self.net)
 
         self.transform = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+            # transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
         ])
         self.encoder = DataEncoder()
 
     def init_spnet(self):
         self.spnet = SPNet()
-        ckpt = torch.load(config.spnet_checkpoint)
+        ckpt = torch.load(conf.spnet_checkpoint)
         self.spnet.load_state_dict(ckpt['net'])
         self.spnet.eval()
         self.spnet.cuda()
@@ -140,11 +135,33 @@ class DetectionWithProjection:
             transforms.ToTensor()])
             # transforms.Normalize((0.562, 0.370, 0.271), (0.332, 0.302, 0.281))])
 
-    def load_label_map(self):
-        with open(config.label_map, 'r') as f:
+    def load_label_map_from_pkl(self):
+        with open(conf.label_map, 'r') as f:
             label_map = pickle.load(f)
         assert label_map is not None, 'cannot load label map'
         self.label_map = label_map
+
+    def load_label_map(self):
+        with open(conf.label_map, 'r') as f:
+            content = f.read().splitlines()
+            f.close()
+        assert content is not None, 'cannot find label map'
+
+        temp = list()
+        for line in content:
+            line = line.strip()
+            if (len(line) > 2 and
+                    (line.startswith('id') or
+                     line.startswith('name'))):
+                temp.append(line.split(':')[1].strip())
+
+        label_dict = dict()
+        for idx in range(0, len(temp), 2):
+            item_id = int(temp[idx])
+            item_name = temp[idx + 1][1:-1]
+            label_dict[item_name] = item_id
+
+        self.label_map = label_dict
 
     def get_box_coordinates(self, box, img_shape):
         txmin = int(box[0] * img_shape[0])
@@ -204,14 +221,16 @@ class DetectionWithProjection:
                 cls_preds.cpu().data.squeeze(),
                 (w, h))
 
-        #visualize depth
         draw = ImageDraw.Draw(img, 'RGBA')
-        depth_pixels = list(depth_img.getdata())
-        depth_pixels = [depth_pixels[i * w:(i + 1) * w] for i in xrange(h)]
-        for x in range(0, img.size[0]):
-            for y in range(0, img.size[1]):
-                if (depth_pixels[y][x] < 0.001):
-                    draw.point((x,y), fill=(0,0,0))
+
+        if self.depth_img_msg is not None:
+            # visualize depth
+            depth_pixels = list(depth_img.getdata())
+            depth_pixels = [depth_pixels[i * w:(i + 1) * w] for i in xrange(h)]
+            for x in range(0, img.size[0]):
+                for y in range(0, img.size[1]):
+                    if (depth_pixels[y][x] < 0.001):
+                        draw.point((x,y), fill=(0,0,0))
 
         if boxes is None or len(boxes) == 0:
             # print('no detection')
@@ -236,9 +255,9 @@ class DetectionWithProjection:
 
         rvec = np.array([0.0, 0.0, 0.0])
 
-        # z0 = (config.camera_to_table /
-        #       (np.cos(np.radians(90 - self.camera_tilt)) + 0.1 ** 10))
-        z0 = config.camera_to_table
+        z0 = (conf.camera_to_table /
+              (np.cos(np.radians(90 - conf.camera_tilt)) + 1e-10))
+        # z0 = conf.camera_to_table
 
         detections = list()
 
@@ -280,7 +299,6 @@ class DetectionWithProjection:
             detections.append(rst_vecs)
 
         # visualize detections
-        draw = ImageDraw.Draw(img, 'RGBA')
         fnt = ImageFont.truetype('Pillow/Tests/fonts/DejaVuSans.ttf', 11)
         for idx in range(len(boxes)):
             box = boxes[idx]
@@ -307,60 +325,22 @@ class DetectionWithProjection:
 def print_usage(err_msg):
     print(err_msg)
     print('Usage:')
-    print('\t./detection_w_projection.py <config_filename (e.g. ada.json)>\n')
-
-
-def load_configs():
-    args = sys.argv
-
-    config_filename = None
-    if len(args) == 2:
-        config_filename = args[1]
-    else:
-        ros_param_name = '/pose_estimator/config_filename'
-        if rospy.has_param(ros_param_name):
-            config_filename = rospy.get_param(ros_param_name)
-
-    if config_filename is None:
-        print_usage('Invalid arguments')
-        return None
-
-    config_filepath = os.path.join(
-        pkg_base, 'src/deep_pose_estimators/config', config_filename)
-    print('config with: {}'.format(config_filepath))
-
-    try:
-        with open(config_filepath, 'r') as f:
-            import simplejson
-            from easydict import EasyDict
-            config = EasyDict(simplejson.loads(f.read()))
-            return config
-    except EnvironmentError:
-        print_usage('Cannot find config file')
-
-    return None
+    print('\t./detection_w_projection.py <config_filename (e.g. herb)>\n')
 
 
 def run_detection():
-    global config
-    config = load_configs()
-    if config is None:
-        return
-
-    os.environ['CUDA_VISIBLE_DEVICES'] = config.gpus
-
-    rospy.init_node(config.node_title)
+    rospy.init_node(conf.node_title)
     rcnn_projection = DetectionWithProjection(
-        title=config.node_title,
+        title=conf.node_title,
         use_spnet=True)
 
     try:
         pub_pose = rospy.Publisher(
-                '{}/marker_array'.format(config.node_title),
+                '{}/marker_array'.format(conf.node_title),
                 MarkerArray,
                 queue_size=1)
 
-        rate = rospy.Rate(config.frequency)  # 1 hz
+        rate = rospy.Rate(conf.frequency)  # 1 hz
 
         while not rospy.is_shutdown():
             update_timestamp_str = 'update: {}'.format(rospy.get_time())
@@ -379,12 +359,12 @@ def run_detection():
                     obj_info['id'] = '{}_{}'.format(item[2], item_dict[item[2]])
 
                     pose = Marker()
-                    pose.header.frame_id = config.camera_tf
+                    pose.header.frame_id = conf.camera_tf
                     pose.header.stamp = rospy.Time.now()
                     pose.id = item[3]
-                    pose.ns = 'food_item'
+                    pose.ns = conf.marker_ns
                     pose.text = json.dumps(obj_info)
-                    pose.type = Marker.CUBE
+                    pose.type = Marker.CYLINDER
                     pose.pose.position.x = item[1][0]
                     pose.pose.position.y = item[1][1]
                     pose.pose.position.z = item[1][2]
@@ -412,4 +392,28 @@ def run_detection():
 
 
 if __name__ == '__main__':
+    args = sys.argv
+
+    config_filename = None
+    if len(args) == 2:
+        config_filename = args[1]
+    else:
+        ros_param_name = '/pose_estimator/config_filename'
+        if rospy.has_param(ros_param_name):
+            config_filename = rospy.get_param(ros_param_name)
+
+    if config_filename is None:
+        print_usage('Invalid arguments')
+        exit(0)
+
+    if config_filename.startswith('ada'):
+        from robot_conf import ada as conf
+    elif config_filename.startswith('herb'):
+        from robot_conf import herb as conf
+    else:
+        print_usage('Invalid arguments')
+        exit(0)
+
+    os.environ['CUDA_VISIBLE_DEVICES'] = conf.gpus
+
     run_detection()
