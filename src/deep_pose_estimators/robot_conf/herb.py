@@ -7,10 +7,12 @@ msg_type = 'compressed'
 depth_image_topic = None
 depth_msg_type = None
 
+pointcloud_topic = '/multisense/lidar_points2'
+
 camera_tf = 'multisense/left_camera_optical_frame'
 camera_info_topic = '/multisense/left/image_rect_color/camera_info'
 
-camera_to_table = 0.575
+camera_to_table = 0.500
 camera_tilt = 30.0
 
 num_classes = 4

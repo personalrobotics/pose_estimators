@@ -9,6 +9,7 @@ import os
 import sys
 import json
 import cv2
+import pcl
 import rospy
 import rospkg
 try:
@@ -21,11 +22,12 @@ import torchvision.transforms as transforms
 
 from PIL import Image as PILImage
 from PIL import ImageDraw, ImageFont
-
 from visualization_msgs.msg import Marker, MarkerArray
 from sensor_msgs.msg import CompressedImage, Image, CameraInfo
-
+import sensor_msgs.point_cloud2 as pc2
 from cv_bridge import CvBridge
+
+from utils import pcl_utils
 
 rospack = rospkg.RosPack()
 pkg_base = rospack.get_path('deep_pose_estimators')
@@ -34,7 +36,7 @@ sys.path.append(os.path.join(
     pkg_base, 'src/deep_pose_estimators/external'))
 from pytorch_retinanet.model.retinanet import RetinaNet
 from pytorch_retinanet.utils.encoder import DataEncoder
-from pytorch_retinanet.utils import utils
+from pytorch_retinanet.utils import utils as retinanet_utils
 
 from bite_selection_package.model.spnet import SPNet
 
@@ -56,26 +58,26 @@ class DetectionWithProjection:
         self.label_map = None
         self.encoder = None
 
+        self.agg_pc_data = list()
+        self.camera_to_table = conf.camera_to_table
+
         self.use_spnet = use_spnet
         self.spnet = None
         self.spnet_transform = None
 
         self.init_ros_subscribers()
+        self.init_ros_publishers()
 
-        self.pub_img = rospy.Publisher(
-            '{}/detection_image'.format(self.title),
-            Image,
-            queue_size=2)
         self.bridge = CvBridge()
 
     def init_ros_subscribers(self):
         # subscribe image topic
         if conf.msg_type == 'compressed':
-            self.subscriber = rospy.Subscriber(
+            self.img_subscriber = rospy.Subscriber(
                 conf.image_topic, CompressedImage,
                 self.sensor_compressed_image_callback, queue_size=1)
         else:  # raw
-            self.subscriber = rospy.Subscriber(
+            self.img_subscriber = rospy.Subscriber(
                 conf.image_topic, Image,
                 self.sensor_image_callback, queue_size=1)
         print('subscribed to {}'.format(conf.image_topic))
@@ -83,16 +85,34 @@ class DetectionWithProjection:
         if (conf.depth_image_topic is not None and
                 len(conf.depth_image_topic) > 0):
             # subscribe depth topic, only raw for now
-            self.subscriber = rospy.Subscriber(
+            self.depth_subscriber = rospy.Subscriber(
                 conf.depth_image_topic, Image,
                 self.sensor_depth_callback, queue_size=1)
             print('subscribed to {}'.format(conf.depth_image_topic))
+
+        if (conf.pointcloud_topic is not None and
+                len(conf.pointcloud_topic) > 0):
+            self.pointcloud_subscriber = rospy.Subscriber(
+                conf.pointcloud_topic, pc2.PointCloud2,
+                self.lidar_scan_callback, queue_size=10)
+            print('subscribed to {}'.format(conf.pointcloud_topic))
 
         # subscribe camera info topic
         self.subscriber = rospy.Subscriber(
                 conf.camera_info_topic, CameraInfo,
                 self.camera_info_callback)
         print('subscribed to {}'.format(conf.camera_info_topic))
+
+    def init_ros_publishers(self):
+        self.pub_img = rospy.Publisher(
+            '{}/detection_image'.format(self.title),
+            Image,
+            queue_size=2)
+
+        self.pub_table = rospy.Publisher(
+            '{}/table_point_cloud2'.format(self.title),
+            pc2.PointCloud2,
+            queue_size=2)
 
     def sensor_compressed_image_callback(self, ros_data):
         np_arr = np.fromstring(ros_data.data, np.uint8)
@@ -107,6 +127,38 @@ class DetectionWithProjection:
 
     def camera_info_callback(self, ros_data):
         self.camera_info = ros_data
+
+    def lidar_scan_callback(self, ros_data):
+        this_plist = list()
+        for data in pc2.read_points(ros_data, skip_nans=True):
+            if (data[0] > -0.75 and data[0] < 0.75 and
+                    data[1] > -0.05 and data[1] < 0.5 and
+                    data[2] > 0.45 and data[2] < 1.1):
+                    # data[3] > 2500 and data[3] < 4000):
+                this_plist.append([data[0], data[1], data[2], data[3]])
+
+        self.agg_pc_data.append(this_plist)
+        if len(self.agg_pc_data) > max_len:
+            del self.agg_pc_data[0]
+
+            merged_list = self.agg_pc_data[0]
+            for idx in range(1, len(self.agg_pc_data)):
+                merged_list.extend(self.agg_pc_data[idx])
+            pcl_cloud = pcl.PointCloud_PointXYZRGB()
+            pcl_cloud.from_list(merged_list)
+
+            seg = pcl_cloud.make_segmenter()
+            seg.set_optimize_coefficients(True)
+            seg.set_model_type(pcl.SACMODEL_PLANE)
+            seg.set_method_type(pcl.SAC_RANSAC)
+            seg.set_distance_threshold(0.01)
+            indices, model = seg.segment()
+
+            self.camera_to_table = model[3]  # ax + by + cz + d = 0
+
+            table_cloud = pcl_cloud.extract(indices)
+            new_ros_msg = pcl_utils.pcl_to_ros(table_cloud)
+            self.pub_table.publish(new_ros_msg)
 
     def init_retinanet(self):
         self.net = RetinaNet(conf.num_classes)
@@ -253,11 +305,9 @@ class DetectionWithProjection:
         # cam_cx = 320
         # cam_cy = 240
 
-        rvec = np.array([0.0, 0.0, 0.0])
-
-        z0 = (conf.camera_to_table /
+        z0 = (self.camera_to_table /
               (np.cos(np.radians(90 - conf.camera_tilt)) + 1e-10))
-        # z0 = conf.camera_to_table
+        # z0 = self.camera_to_table
 
         detections = list()
 
@@ -279,13 +329,14 @@ class DetectionWithProjection:
                 pred_position, pred_angle = self.spnet(cropped_img)
             else:
                 pred_position = np.array([0.5, 0.5])
-                pred_angle = 0.0
+                pred_angle = 1.65
 
             txoff = (txmax - txmin) * pred_position[0]
             tyoff = (tymax - tymin) * pred_position[1]
             pt = [txmin + txoff, tymin + tyoff]
 
-            x, y, z, w = utils.angles_to_quaternion(pred_angle, 0., 0.)
+            x, y, z, w = retinanet_utils.angles_to_quaternion(
+                pred_angle, 0., 0.)
             rvec = np.array([x, y, z, w])
 
             # y0 = (z0 / cam_fy) * (pt[1] - cam_cy)
@@ -332,7 +383,7 @@ def run_detection():
     rospy.init_node(conf.node_title)
     rcnn_projection = DetectionWithProjection(
         title=conf.node_title,
-        use_spnet=True)
+        use_spnet=False)
 
     try:
         pub_pose = rospy.Publisher(
