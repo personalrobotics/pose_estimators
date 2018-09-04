@@ -27,17 +27,18 @@ from sensor_msgs.msg import CompressedImage, Image, CameraInfo
 
 from cv_bridge import CvBridge
 
+from utils import math_utils
+
 rospack = rospkg.RosPack()
 pkg_base = rospack.get_path('deep_pose_estimators')
 
 external_path = os.path.join(
-    pkg_base, 'src/deep_pose_estimators/external/pytorch-retinanet')
+    pkg_base, 'src/deep_pose_estimators/external')
 sys.path.append(external_path)
-from model.retinanet import RetinaNet
-from utils.encoder import DataEncoder
-from utils import utils
+from pytorch_retinanet.model.retinanet import RetinaNet
+from pytorch_retinanet.utils.encoder import DataEncoder
+from pytorch_retinanet.utils import utils
 
-sys.path.append('../')
 from bite_selection_package.model.spnet import SPNet
 
 
@@ -137,8 +138,9 @@ class DetectionWithProjection:
         self.spnet.cuda()
 
         self.spnet_transform = transforms.Compose([
-            transforms.ToTensor()])
-            # transforms.Normalize((0.562, 0.370, 0.271), (0.332, 0.302, 0.281))])
+            transforms.ToTensor(),
+            # transforms.Normalize((0.562, 0.370, 0.271), (0.332, 0.302, 0.281))
+        ])
 
     def load_label_map(self):
         with open(config.label_map, 'r') as f:
@@ -204,14 +206,18 @@ class DetectionWithProjection:
                 cls_preds.cpu().data.squeeze(),
                 (w, h))
 
-        #visualize depth
+        # sp_poses = [[0.0, 0.0], [1.0, 1.0]]
+        sp_poses = [[0.5, 0.5]]
+        sp_angles = [45.0, 45.0]
+
+        # visualize depth
         draw = ImageDraw.Draw(img, 'RGBA')
-        depth_pixels = list(depth_img.getdata())
-        depth_pixels = [depth_pixels[i * w:(i + 1) * w] for i in xrange(h)]
-        for x in range(0, img.size[0]):
-            for y in range(0, img.size[1]):
-                if (depth_pixels[y][x] < 0.001):
-                    draw.point((x,y), fill=(0,0,0))
+        # depth_pixels = list(depth_img.getdata())
+        # depth_pixels = [depth_pixels[i * w:(i + 1) * w] for i in xrange(h)]
+        # for x in range(0, img.size[0]):
+        #     for y in range(0, img.size[1]):
+        #         if (depth_pixels[y][x] < 0.001):
+        #             draw.point((x,y), fill=(0,0,0))
 
         if boxes is None or len(boxes) == 0:
             # print('no detection')
@@ -242,59 +248,59 @@ class DetectionWithProjection:
 
         detections = list()
 
+        bbox_offset = 5
+
         for box_idx in range(len(boxes)):
             t_class = labels[box_idx].item()
             t_class_name = self.label_map[t_class]
 
-            txmin, tymin, txmax, tymax = boxes[box_idx].numpy()
+            txmin, tymin, txmax, tymax = boxes[box_idx].numpy() - bbox_offset
 
-            cropped_depth = depth_img[tymin:tymax, txmin:txmax]
+            box_key = '{}_{}_{}'.format(t_class_name, int(txmin), int(tymin))
+
+            cropped_depth = depth_img[int(tymin):int(tymax), int(txmin):int(txmax)]
 
             z0 = self.calculate_depth(cropped_depth)
             if z0 < 0:
                 print("skipping " + t_class_name + " because depth invalid")
                 continue
 
-            if self.use_spnet:
-                cropped_img = img[tymin:tymax, txmin:txmax]
-                pred_position, pred_angle = self.spnet(cropped_img)
-            else:
-                pred_position = np.array([0.5, 0.5])
-                pred_angle = 0.0
+            for sp_idx in range(len(sp_poses)):
+                this_pos = sp_poses[sp_idx]
+                this_ang = sp_angles[sp_idx]
 
-            txoff = (txmax - txmin) * pred_position[0]
-            tyoff = (tymax - tymin) * pred_position[1]
-            pt = [txmin + txoff, tymin + tyoff]
+                txoff = (txmax - txmin) * this_pos[0]
+                tyoff = (tymax - tymin) * this_pos[1]
+                pt = [txmin + txoff, tymin + tyoff]
 
-            x, y, z, w = utils.angles_to_quaternion(pred_angle, 0., 0.)
-            rvec = np.array([x, y, z, w])
+                x, y, z, w = math_utils.angles_to_quaternion(this_ang, 0., 0.)
+                rvec = np.array([x, y, z, w])
 
-            # y0 = (z0 / cam_fy) * (pt[1] - cam_cy)
-            # tan_alpha = -y0 / z0
-            tz = z0  # - (y0 / (tan_theta - tan_alpha))
-            tx = (tz / cam_fx) * (pt[0] - cam_cx)
-            ty = (tz / cam_fy) * (pt[1] - cam_cy)
-            tvec = np.array([tx, ty, tz])
+                # y0 = (z0 / cam_fy) * (pt[1] - cam_cy)
+                # tan_alpha = -y0 / z0
+                tz = z0  # - (y0 / (tan_theta - tan_alpha))
+                tx = (tz / cam_fx) * (pt[0] - cam_cx)
+                ty = (tz / cam_fy) * (pt[1] - cam_cy)
+                tvec = np.array([tx, ty, tz])
 
-            rst_vecs = [rvec, tvec, t_class_name, t_class]
-            detections.append(rst_vecs)
+                rst_vecs = [rvec, tvec, t_class_name, t_class, box_key]
+                detections.append(rst_vecs)
 
         # visualize detections
-        draw = ImageDraw.Draw(img, 'RGBA')
         fnt = ImageFont.truetype('Pillow/Tests/fonts/DejaVuSans.ttf', 11)
         for idx in range(len(boxes)):
-            box = boxes[idx]
+            box = boxes[idx].numpy() - bbox_offset
             label = labels[idx]
-            draw.rectangle(list(box), outline=(255, 0, 0, 200))
+            draw.rectangle(box, outline=(255, 0, 0, 200))
 
             item_tag = '{0}: {1:.2f}'.format(
                 self.label_map[label.item()],
                 scores[idx])
             iw, ih = fnt.getsize(item_tag)
-            ix, iy = list(box[:2])
+            ix, iy = box[:2]
             draw.rectangle((ix, iy, ix + iw, iy + ih), fill=(255, 0, 0, 100))
             draw.text(
-                list(box[:2]),
+                box[:2],
                 item_tag,
                 font=fnt, fill=(255, 255, 255, 255))
 
@@ -352,7 +358,7 @@ def run_detection():
     rospy.init_node(config.node_title)
     rcnn_projection = DetectionWithProjection(
         title=config.node_title,
-        use_spnet=True)
+        use_spnet=False)
 
     try:
         pub_pose = rospy.Publisher(
@@ -377,6 +383,7 @@ def run_detection():
 
                     obj_info = dict()
                     obj_info['id'] = '{}_{}'.format(item[2], item_dict[item[2]])
+                    obj_info['box_key'] = item[3]
 
                     pose = Marker()
                     pose.header.frame_id = config.camera_tf
