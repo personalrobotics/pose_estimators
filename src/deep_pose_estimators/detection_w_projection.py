@@ -241,10 +241,9 @@ class DetectionWithProjection:
                     ix = ci * final_size / mask_size
                     iy = ri * final_size / mask_size
                     # draw.rectangle((ix - iw, iy - ih, ix + iw, iy + ih), fill=(30, 30, 250, 255))
-                    print(rotation)
                     iw = -math.sin(rotation / 180.0 * 3.1415) * 5 * (final_size / target_size)
                     ih = math.cos(rotation / 180.0 * 3.1415) * 5 * (final_size / target_size)
-                    print(str(ix) + ', ' + str(iy) + ', ' + str(iw) + ', ' + str(ih))
+                    # print(str(ix) + ', ' + str(iy) + ', ' + str(iw) + ', ' + str(ih))
                     draw.line((ix - iw, iy - ih, ix + iw, iy + ih), fill=(30, 30, 250, 255), width = int(float(final_size) / float(target_size)))
                     sp_poses.append([ci / float(mask_size), ri / float(mask_size)])
                     sp_angles.append(rotation)
@@ -404,12 +403,6 @@ class DetectionWithProjection:
                         current_z0 = self.calculate_depth(cropped_depth)
                         if current_z0 < 0:
                             current_z0 = z0
-                            print("c")
-                        else:
-                            print("b")
-                    else:
-                        print("a")
-
 
                     x, y, z, w = math_utils.angles_to_quaternion(this_ang, 0., 0.)
                     rvec = np.array([x, y, z, w])
