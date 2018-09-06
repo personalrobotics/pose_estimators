@@ -42,6 +42,7 @@ from pytorch_retinanet.utils.encoder import DataEncoder
 from pytorch_retinanet.utils import utils
 
 from bite_selection_package.model.spnet import SPNet
+import time
 
 
 config = None  # configurations saved in a json file (e.g. config/ada.json)
@@ -192,14 +193,7 @@ class DetectionWithProjection:
         z0 = np.mean(depth)
         return z0 / 1000.0  # mm to m
 
-    def publish_spnet(self, sliced_img, identity):
-        # img_org = PILImage.fromarray(self.img_msg.copy())
-        # img = PILImage.new('RGB', img_org.size)
-        # msg_img = self.bridge.cv2_to_imgmsg(np.array(img), "rgb8")
-        # self.pub_spnet_img.publish(msg_img)
-        # return
-
-
+    def publish_spnet(self, sliced_img, identity, actuallyPublish = False):
         img_org = PILImage.fromarray(sliced_img.copy())
 
         target_size = 136
@@ -232,12 +226,11 @@ class DetectionWithProjection:
         rmask = rmask.reshape(mask_size, mask_size)
         sp_poses = []
         sp_angles = []
+        done = False
         for ri in range(mask_size):
             for ci in range(mask_size):
                 rotation = rmask[ri][ci]
                 if rotation >= 0:
-                    iw = 1
-                    ih = 1
                     ix = ci * final_size / mask_size
                     iy = ri * final_size / mask_size
                     # draw.rectangle((ix - iw, iy - ih, ix + iw, iy + ih), fill=(30, 30, 250, 255))
@@ -246,20 +239,22 @@ class DetectionWithProjection:
                     # print(str(ix) + ', ' + str(iy) + ', ' + str(iw) + ', ' + str(ih))
                     draw.line((ix - iw, iy - ih, ix + iw, iy + ih), fill=(30, 30, 250, 255), width = int(float(final_size) / float(target_size)))
                     sp_poses.append([ci / float(mask_size), ri / float(mask_size)])
+
+                    x1 = iw
+                    y1 = ih
+                    x2 = 0.5 - ci / float(mask_size)
+                    y2 = 0.5 - ri / float(mask_size)
+                    a = x1*y2 - x2*y1
+                    if a > 0:
+                        rotation += 180
                     sp_angles.append(rotation)
+                    # done = True
+                if done: break
+            if done: break
 
-        # for idx in range(0, len(pred_bmasks)):
-        #     position = pred_bmasks[0].data.cpu().numpy()
-        #     rmask = pred_rmasks[0].data.cpu().numpy()
-        #     rotation = np.argmax(rmask, axis=0)
-        #     iw = 1
-        #     ih = 1
-        #     ix = position[0] * target_size
-        #     iy = position[1] * target_size
-        #     draw.rectangle((ix - iw, iy - ih, ix + iw, iy + ih), fill=(255, 0, 0, 150))
-
-        msg_img = self.bridge.cv2_to_imgmsg(np.array(img), "rgb8")
-        self.pub_spnet_img.publish(msg_img)
+        if actuallyPublish:
+            msg_img = self.bridge.cv2_to_imgmsg(np.array(img), "rgb8")
+            self.pub_spnet_img.publish(msg_img)
         return sp_poses, sp_angles
 
     def detect_objects(self):
@@ -360,7 +355,7 @@ class DetectionWithProjection:
                     found = True
                     spBoxIdx = box_idx
                     cropped_img = copied_img_msg[int(tymin):int(tymax), int(txmin):int(txmax)]
-                    sp_poses, sp_angles = self.publish_spnet(cropped_img, t_class_name)
+                    sp_poses, sp_angles = self.publish_spnet(cropped_img, t_class_name, True)
                     self.last_class_name = t_class_name
                     break
 
@@ -374,6 +369,10 @@ class DetectionWithProjection:
             t_class_name = self.label_map[t_class]
 
             txmin, tymin, txmax, tymax = boxes[box_idx].numpy() - bbox_offset
+            if (txmin < 0 or tymin < 0 or txmax > width or tymax > height):
+                break
+            cropped_img = copied_img_msg[int(tymin):int(tymax), int(txmin):int(txmax)]
+            sp_poses, sp_angles = self.publish_spnet(cropped_img, t_class_name, False)
 
 
             cropped_depth = depth_img[int(tymin):int(tymax), int(txmin):int(txmax)]
@@ -384,7 +383,7 @@ class DetectionWithProjection:
                 continue
 
             if spBoxIdx >= 0:
-                # pdb.set_trace()
+                
                 for sp_idx in range(len(sp_poses)):
                     box_key = '{}_{}_{}_{}'.format(t_class_name, int(txmin), int(tymin), sp_idx)
                     this_pos = sp_poses[sp_idx]
@@ -404,7 +403,7 @@ class DetectionWithProjection:
                         if current_z0 < 0:
                             current_z0 = z0
 
-                    x, y, z, w = math_utils.angles_to_quaternion(this_ang, 0., 0.)
+                    x, y, z, w = math_utils.angles_to_quaternion(this_ang + 90, 0., 0.)
                     rvec = np.array([x, y, z, w])
 
                     tz = current_z0
@@ -521,7 +520,7 @@ def run_detection():
 
                     obj_info = dict()
                     obj_info['id'] = '{}_{}'.format(item[2], item_dict[item[2]])
-                    obj_info['box_key'] = item[4]
+                    obj_info['box_key'] = item[3] * 1000 + item[5]
 
                     pose = Marker()
                     pose.header.frame_id = config.camera_tf
