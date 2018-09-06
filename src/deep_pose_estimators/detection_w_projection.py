@@ -135,7 +135,7 @@ class DetectionWithProjection:
         self.net.eval()
         if self.use_cuda:
             net = self.net.cuda()
-        
+
         print('Loaded RetinaNet.')
         # print(self.net)
 
@@ -208,21 +208,20 @@ class DetectionWithProjection:
         transform = transforms.Compose([transforms.ToTensor()])
         pred_bmasks, pred_rmasks = self.spnet(torch.stack([transform(img)]).cuda())
 
-
         # print(pred_bmasks)
 
-        angle_res = 6
+        angle_res = 18
         mask_size = 17
         final_size = 512
 
         img = img.resize((final_size,final_size), PILImage.ANTIALIAS)
         draw = ImageDraw.Draw(img, 'RGBA')
-        positives = pred_bmasks[0].data.cpu().numpy() < -1
+        negatives = pred_bmasks[0].data.cpu().numpy() < -1
         rmask = pred_rmasks[0].data.cpu().numpy()
-        rmask = np.argmax(rmask, axis=1)
+        rmask = np.argmax(rmask, axis=1) - 1
         rmask = rmask * 180 / angle_res
         rmask[rmask < 0] = 0
-        rmask[positives] = -1
+        rmask[negatives] = -1
         rmask = rmask.reshape(mask_size, mask_size)
         sp_poses = []
         sp_angles = []
@@ -262,9 +261,9 @@ class DetectionWithProjection:
             print('no input stream')
             return list()
 
-        if self.depth_img_msg is None:
-            print('no input depth stream')
-            return list()
+        # if self.depth_img_msg is None:
+        #     print('no input depth stream')
+        #     return list()
 
         if self.net is None:
             self.init_retinanet()
@@ -277,7 +276,7 @@ class DetectionWithProjection:
 
         copied_img_msg = self.img_msg.copy()
         img = PILImage.fromarray(copied_img_msg.copy())
-        depth_img = self.depth_img_msg.copy()
+        # depth_img = self.depth_img_msg.copy()
         # depth_img = PILImage.fromarray(depth)
         width, height = img.size
 
@@ -339,8 +338,6 @@ class DetectionWithProjection:
         bbox_offset = 5
 
         first_food_item = True
-                    
-
 
         found = False
         spBoxIdx = -1
@@ -362,7 +359,7 @@ class DetectionWithProjection:
             self.selector_index = (self.selector_index + 1) % len(self.selector_food_names)
             if found:
                 break
-                        
+
 
         for box_idx in range(len(boxes)):
             t_class = labels[box_idx].item()
@@ -375,15 +372,16 @@ class DetectionWithProjection:
             sp_poses, sp_angles = self.publish_spnet(cropped_img, t_class_name, False)
 
 
-            cropped_depth = depth_img[int(tymin):int(tymax), int(txmin):int(txmax)]
+            # cropped_depth = depth_img[int(tymin):int(tymax), int(txmin):int(txmax)]
 
-            z0 = self.calculate_depth(cropped_depth)
+            # z0 = self.calculate_depth(cropped_depth)
+            z0 = 1
             if z0 < 0:
                 print("skipping " + t_class_name + " because depth invalid")
                 continue
 
             if spBoxIdx >= 0:
-                
+
                 for sp_idx in range(len(sp_poses)):
                     box_key = '{}_{}_{}_{}'.format(t_class_name, int(txmin), int(tymin), sp_idx)
                     this_pos = sp_poses[sp_idx]
@@ -394,8 +392,9 @@ class DetectionWithProjection:
                     pt = [txmin + txoff, tymin + tyoff]
 
                     diff = 30
-                    cropped_depth = depth_img[int(pt[1]-diff):int(pt[1]+diff), int(pt[0]-diff):int(pt[1]+diff)]
-                    current_z0 = self.calculate_depth(cropped_depth)
+                    # cropped_depth = depth_img[int(pt[1]-diff):int(pt[1]+diff), int(pt[0]-diff):int(pt[1]+diff)]
+                    # current_z0 = self.calculate_depth(cropped_depth)
+                    current_z0 = 1
                     if (current_z0 < 0):
                         diff = 70
                         cropped_depth = depth_img[int(pt[1]-diff):int(pt[1]+diff), int(pt[0]-diff):int(pt[1]+diff)]
