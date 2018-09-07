@@ -410,13 +410,8 @@ class DetectionWithProjection:
 
         if self.depth_img_msg is None:
             print('no input depth stream')
-<<<<<<< HEAD
             # self.depth_img_msg = np.ones(self.img_msg.shape[:2])
             return list()
-=======
-            self.depth_img_msg = np.ones(self.img_msg.shape[:2])
-            # return list()
->>>>>>> 982b2342c07f57c2e99afffe6665b478b72e7b0e
 
         if self.net is None:
             self.init_retinanet()
