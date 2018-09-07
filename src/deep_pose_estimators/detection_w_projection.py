@@ -305,6 +305,7 @@ class DetectionWithProjection:
         rmask = rmask.reshape(self.mask_size, self.mask_size)
 
         sp_mode = 'group'
+        rotation_mode = 'alt'
         sp_poses = list()
         sp_angles = list()
 
@@ -314,6 +315,10 @@ class DetectionWithProjection:
             for item in group_list:
                 ri, ci = item[0]
                 rotation = item[1]
+
+                if rotation_mode = 'alt':
+                    cp = self.mask_size / 2
+                    rotation = -np.degrees(np.arctan2(ri - cp, ci - cp))
 
                 rotation = -rotation
                 ix = ci * self.final_size / self.mask_size
@@ -353,6 +358,11 @@ class DetectionWithProjection:
                 for ci in range(self.mask_size):
                     rotation = rmask[ri][ci]
                     if rotation >= -1:
+                        if rotation_mode = 'alt':
+                            cp = self.mask_size / 2
+                            rotation = -np.degrees(
+                                np.arctan2(ri - cp, ci - cp))
+
                         rotation = -rotation
                         ix = ci * self.final_size / self.mask_size
                         iy = ri * self.final_size / self.mask_size
