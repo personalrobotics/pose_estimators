@@ -70,6 +70,11 @@ class DetectionWithProjection:
         self.spnet = None
         self.spnet_transform = None
 
+        self.angle_res = 18
+        self.mask_size = 17
+        self.final_size = 512
+        self.target_size = 136
+
         self.camera_tilt = 1e-5
 
         self.init_ros_subscribers()
@@ -128,16 +133,16 @@ class DetectionWithProjection:
     def init_retinanet(self):
         self.net = RetinaNet(config.num_classes)
         if self.use_cuda:
-            ckpt = torch.load(config.checkpoint)
+            ckpt = torch.load(os.path.expanduser(config.checkpoint))
         else:
-            ckpt = torch.load(config.checkpoint, map_location='cpu')
+            ckpt = torch.load(os.path.expanduser(config.checkpoint), map_location='cpu')
         self.net.load_state_dict(ckpt['net'])
         self.net.eval()
         if self.use_cuda:
             net = self.net.cuda()
 
         print('Loaded RetinaNet.')
-        # print(self.net)
+        print(self.net)
 
         self.transform = transforms.Compose([
             transforms.ToTensor(),
@@ -148,14 +153,14 @@ class DetectionWithProjection:
     def init_spnet(self):
         self.spnet = SPNet()
         if self.use_cuda:
-            ckpt = torch.load(config.spnet_checkpoint)
+            ckpt = torch.load(os.path.expanduser(config.spnet_checkpoint))
         else:
-            ckpt = torch.load(config.spnet_checkpoint, map_location='cpu')
+            ckpt = torch.load(os.path.expanduser(config.spnet_checkpoint),
+                              map_location='cpu')
         self.spnet.load_state_dict(ckpt['net'])
         self.spnet.eval()
         if self.use_cuda:
             spnet = self.spnet.cuda()
-
 
         self.spnet_transform = transforms.Compose([
             transforms.ToTensor(),
@@ -163,7 +168,7 @@ class DetectionWithProjection:
         ])
 
     def load_label_map(self):
-        with open(config.label_map, 'r') as f:
+        with open(os.path.expanduser(config.label_map), 'r') as f:
             label_map = pickle.load(f)
         assert label_map is not None, 'cannot load label map'
         self.label_map = label_map
@@ -193,63 +198,195 @@ class DetectionWithProjection:
         z0 = np.mean(depth)
         return z0 / 1000.0  # mm to m
 
+    def add_group_item(self, grid, x, y, gidx):
+        if x < 0 or x >= grid.shape[0] or y < 0 or y >= grid.shape[1]:
+            return False
+        if grid[x, y] != 1:
+            return False
+
+        grid[x, y] = gidx
+        return True
+
+    def propagate_group(self, grid, x, y, gidx):
+        next_steps = [
+            [x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1],
+            [x + 1, y + 1], [x - 1, y - 1], [x - 1, y + 1], [x + 1, y - 1]]
+        for item in next_steps:
+            if self.add_group_item(grid, item[0], item[1], gidx):
+                self.propagate_group(grid, item[0], item[1], gidx)
+
+    def group_rmask(self, rmask, rmask_prob):
+        grid = np.ones_like(rmask)
+        grid[rmask == -2] = 0
+
+        gidx = 2
+        for ri in range(grid.shape[0]):
+            for ci in range(grid.shape[1]):
+                if self.add_group_item(grid, ri, ci, gidx):
+                    self.propagate_group(grid, ri, ci, gidx)
+                    gidx += 1
+
+        group_list = list()
+        for gi in range(2, gidx):
+            this_item = list()
+
+            this_group = np.where(grid == gi)
+            locations = np.dstack(this_group)[0]
+            loc_mean = np.mean(locations, axis=0)
+            this_item.append(loc_mean)
+
+            rotations = rmask[this_group]
+            rot_prob = rmask_prob[this_group]
+
+            positives = rotations > -1
+            rotations = rotations[positives]
+            rot_prob = rot_prob[positives]
+            if len(rotations) > 0:
+                if len(rot_prob) == 1:
+                    final_rotation = rotations[0]
+                else:
+                    final_rotation = np.sum(
+                        rotations * math_utils.softmax(rot_prob))
+            else:
+                final_rotation = -1
+            this_item.append(final_rotation)
+
+            group_list.append(this_item)
+        return group_list
+
     def publish_spnet(self, sliced_img, identity, actuallyPublish = False):
         img_org = PILImage.fromarray(sliced_img.copy())
 
-        target_size = 136
-        ratio = float(target_size / max(img_org.size))
+        ratio = float(self.target_size / max(img_org.size))
         new_size = tuple([int(x * ratio) for x in img_org.size])
-        pads = [(target_size - new_size[0]) // 2,
-                (target_size - new_size[1]) // 2]
+        pads = [(self.target_size - new_size[0]) // 2,
+                (self.target_size - new_size[1]) // 2]
         img_org = img_org.resize(new_size, PILImage.ANTIALIAS)
-        img = PILImage.new('RGB', (target_size, target_size))
+        img = PILImage.new('RGB', (self.target_size, self.target_size))
         img.paste(img_org, pads)
 
         transform = transforms.Compose([transforms.ToTensor()])
-        pred_bmasks, pred_rmasks = self.spnet(torch.stack([transform(img)]).cuda())
+        pred_bmasks, pred_rmasks = self.spnet(
+            torch.stack([transform(img)]).cuda())
 
         # print(pred_bmasks)
 
-        angle_res = 18
-        mask_size = 17
-        final_size = 512
+        np.set_printoptions(
+            edgeitems=30, linewidth=100000,
+            formatter=dict(float=lambda x: "%.3g" % x))
 
-        img = img.resize((final_size,final_size), PILImage.ANTIALIAS)
+        img = img.resize((self.final_size, self.final_size),
+                         PILImage.ANTIALIAS)
         draw = ImageDraw.Draw(img, 'RGBA')
-        negatives = pred_bmasks[0].data.cpu().numpy() < -1
-        rmask = pred_rmasks[0].data.cpu().numpy()
-        rmask = np.argmax(rmask, axis=1) - 1
-        rmask = rmask * 180 / angle_res
-        rmask[rmask < 0] = 0
-        rmask[negatives] = -1
-        rmask = rmask.reshape(mask_size, mask_size)
-        sp_poses = []
-        sp_angles = []
-        done = False
-        for ri in range(mask_size):
-            for ci in range(mask_size):
-                rotation = rmask[ri][ci]
-                if rotation >= 0:
-                    ix = ci * final_size / mask_size
-                    iy = ri * final_size / mask_size
-                    # draw.rectangle((ix - iw, iy - ih, ix + iw, iy + ih), fill=(30, 30, 250, 255))
-                    iw = -math.sin(rotation / 180.0 * 3.1415) * 5 * (final_size / target_size)
-                    ih = math.cos(rotation / 180.0 * 3.1415) * 5 * (final_size / target_size)
-                    # print(str(ix) + ', ' + str(iy) + ', ' + str(iw) + ', ' + str(ih))
-                    draw.line((ix - iw, iy - ih, ix + iw, iy + ih), fill=(30, 30, 250, 255), width = int(float(final_size) / float(target_size)))
-                    sp_poses.append([ci / float(mask_size), ri / float(mask_size)])
 
-                    x1 = iw
-                    y1 = ih
-                    x2 = 0.5 - ci / float(mask_size)
-                    y2 = 0.5 - ri / float(mask_size)
-                    a = x1*y2 - x2*y1
-                    if a > 0:
-                        rotation += 180
-                    sp_angles.append(rotation)
-                    # done = True
+        bmask = pred_bmasks[0].data.cpu().numpy()
+        bmask = math_utils.softmax(bmask)
+        neg_pos = bmask < 0.01
+
+        rmask = pred_rmasks[0].data.cpu().numpy()
+        rmask = math_utils.softmax(rmask, axis=1)
+        neg_rot = np.max(rmask, axis=1) < 0.9
+
+        rmask_prob = np.max(rmask, axis=1)
+        rmask_prob = rmask_prob.reshape(self.mask_size, self.mask_size)
+
+        rmask_argmax = np.argmax(rmask, axis=1) - 1
+        # rmask_argmax = rmask_argmax.reshape(self.mask_size, self.mask_size)
+
+        # sm_base = np.tile(np.arange(self.angle_res + 1), (rmask.shape[0], 1))
+        # rmask_softmax = np.round(
+        #     np.sum(math_utils.softmax(rmask, axis=1) * sm_base, axis=1)) - 1
+        # # rmask_softmax = rmask_softmax.reshape(self.mask_size, self.mask_size)
+
+        rmask = rmask_argmax * 180 / self.angle_res
+        rmask[rmask < 0] = -1
+        rmask[neg_pos] = -2
+        rmask[neg_rot] = -2
+        rmask = rmask.reshape(self.mask_size, self.mask_size)
+
+        sp_mode = 'group'
+        sp_poses = list()
+        sp_angles = list()
+
+        if sp_mode == 'group':
+            group_list = self.group_rmask(rmask, rmask_prob)
+
+            for item in group_list:
+                ri, ci = item[0]
+                rotation = item[1]
+
+                rotation = -rotation
+                ix = ci * self.final_size / self.mask_size
+                iy = ri * self.final_size / self.mask_size
+
+                iw = (-np.sin(rotation * np.pi / 180.0) * 4 *
+                      (self.final_size / self.target_size))
+                ih = (np.cos(rotation * np.pi / 180.0) * 4 *
+                      (self.final_size / self.target_size))
+
+                if -rotation == -1:
+                    line_color = (210, 40, 40, 250)
+                else:
+                    line_color = (30, 30, 250, 250)
+
+                draw.line(
+                    (ix - iw, iy - ih, ix + iw, iy + ih),
+                    fill=line_color,
+                    width=int(float(self.final_size) /
+                              float(self.target_size)))
+                sp_poses.append(
+                    [ci / float(self.mask_size),
+                     ri / float(self.mask_size)])
+
+                x1 = iw
+                y1 = ih
+                x2 = 0.5 - ci / float(self.mask_size)
+                y2 = 0.5 - ri / float(self.mask_size)
+                a = x1 * y2 - x2 * y1
+                if a > 0:
+                    rotation += 180
+                sp_angles.append(rotation)
+
+        else:  # sp_mode = 'mask'
+            done = False
+            for ri in range(self.mask_size):
+                for ci in range(self.mask_size):
+                    rotation = rmask[ri][ci]
+                    if rotation >= -1:
+                        rotation = -rotation
+                        ix = ci * self.final_size / self.mask_size
+                        iy = ri * self.final_size / self.mask_size
+
+                        iw = (-np.sin(rotation * np.pi / 180.0) * 4 *
+                              (self.final_size / self.target_size))
+                        ih = (np.cos(rotation * np.pi / 180.0) * 4 *
+                              (self.final_size / self.target_size))
+
+                        if -rotation == -1:
+                            line_color = (210, 40, 40, 250)
+                        else:
+                            line_color = (30, 30, 250, 250)
+
+                        draw.line(
+                            (ix - iw, iy - ih, ix + iw, iy + ih),
+                            fill=line_color,
+                            width=int(float(self.final_size) /
+                                      float(self.target_size)))
+                        sp_poses.append(
+                            [ci / float(self.mask_size),
+                             ri / float(self.mask_size)])
+
+                        x1 = iw
+                        y1 = ih
+                        x2 = 0.5 - ci / float(self.mask_size)
+                        y2 = 0.5 - ri / float(self.mask_size)
+                        a = x1 * y2 - x2 * y1
+                        if a > 0:
+                            rotation += 180
+                        sp_angles.append(rotation)
+                        # done = True
+                    if done: break
                 if done: break
-            if done: break
 
         if actuallyPublish:
             msg_img = self.bridge.cv2_to_imgmsg(np.array(img), "rgb8")
@@ -261,9 +398,10 @@ class DetectionWithProjection:
             print('no input stream')
             return list()
 
-        # if self.depth_img_msg is None:
-        #     print('no input depth stream')
-        #     return list()
+        if self.depth_img_msg is None:
+            print('no input depth stream')
+            self.depth_img_msg = np.ones(self.img_msg.shape[:2])
+            # return list()
 
         if self.net is None:
             self.init_retinanet()
@@ -276,7 +414,7 @@ class DetectionWithProjection:
 
         copied_img_msg = self.img_msg.copy()
         img = PILImage.fromarray(copied_img_msg.copy())
-        # depth_img = self.depth_img_msg.copy()
+        depth_img = self.depth_img_msg.copy()
         # depth_img = PILImage.fromarray(depth)
         width, height = img.size
 
@@ -351,15 +489,16 @@ class DetectionWithProjection:
                         break
                     found = True
                     spBoxIdx = box_idx
-                    cropped_img = copied_img_msg[int(tymin):int(tymax), int(txmin):int(txmax)]
-                    sp_poses, sp_angles = self.publish_spnet(cropped_img, t_class_name, True)
+                    cropped_img = copied_img_msg[
+                        int(tymin):int(tymax), int(txmin):int(txmax)]
+                    sp_poses, sp_angles = self.publish_spnet(
+                        cropped_img, t_class_name, True)
                     self.last_class_name = t_class_name
                     break
 
             self.selector_index = (self.selector_index + 1) % len(self.selector_food_names)
             if found:
                 break
-
 
         for box_idx in range(len(boxes)):
             t_class = labels[box_idx].item()
@@ -368,14 +507,13 @@ class DetectionWithProjection:
             txmin, tymin, txmax, tymax = boxes[box_idx].numpy() - bbox_offset
             if (txmin < 0 or tymin < 0 or txmax > width or tymax > height):
                 break
-            cropped_img = copied_img_msg[int(tymin):int(tymax), int(txmin):int(txmax)]
-            sp_poses, sp_angles = self.publish_spnet(cropped_img, t_class_name, False)
+            cropped_img = copied_img_msg[
+                int(tymin):int(tymax), int(txmin):int(txmax)]
+            sp_poses, sp_angles = self.publish_spnet(
+                cropped_img, t_class_name, False)
 
-
-            # cropped_depth = depth_img[int(tymin):int(tymax), int(txmin):int(txmax)]
-
-            # z0 = self.calculate_depth(cropped_depth)
-            z0 = 1
+            cropped_depth = depth_img[int(tymin):int(tymax), int(txmin):int(txmax)]
+            z0 = self.calculate_depth(cropped_depth)
             if z0 < 0:
                 print("skipping " + t_class_name + " because depth invalid")
                 continue
@@ -383,7 +521,8 @@ class DetectionWithProjection:
             if spBoxIdx >= 0:
 
                 for sp_idx in range(len(sp_poses)):
-                    box_key = '{}_{}_{}_{}'.format(t_class_name, int(txmin), int(tymin), sp_idx)
+                    box_key = '{}_{}_{}_{}'.format(
+                        t_class_name, int(txmin), int(tymin), sp_idx)
                     this_pos = sp_poses[sp_idx]
                     this_ang = sp_angles[sp_idx]
 
@@ -392,17 +531,21 @@ class DetectionWithProjection:
                     pt = [txmin + txoff, tymin + tyoff]
 
                     diff = 30
-                    # cropped_depth = depth_img[int(pt[1]-diff):int(pt[1]+diff), int(pt[0]-diff):int(pt[1]+diff)]
-                    # current_z0 = self.calculate_depth(cropped_depth)
-                    current_z0 = 1
+                    cropped_depth = depth_img[
+                        int(pt[1]-diff):int(pt[1]+diff),
+                        int(pt[0]-diff):int(pt[1]+diff)]
+                    current_z0 = self.calculate_depth(cropped_depth)
                     if (current_z0 < 0):
                         diff = 70
-                        cropped_depth = depth_img[int(pt[1]-diff):int(pt[1]+diff), int(pt[0]-diff):int(pt[1]+diff)]
+                        cropped_depth = depth_img[
+                            int(pt[1]-diff):int(pt[1]+diff),
+                            int(pt[0]-diff):int(pt[1]+diff)]
                         current_z0 = self.calculate_depth(cropped_depth)
                         if current_z0 < 0:
                             current_z0 = z0
 
-                    x, y, z, w = math_utils.angles_to_quaternion(this_ang + 90, 0., 0.)
+                    x, y, z, w = math_utils.angles_to_quaternion(
+                        this_ang + 90, 0., 0.)
                     rvec = np.array([x, y, z, w])
 
                     tz = current_z0
@@ -410,7 +553,9 @@ class DetectionWithProjection:
                     ty = (tz / cam_fy) * (pt[1] - cam_cy)
                     tvec = np.array([tx, ty, tz])
 
-                    rst_vecs = [rvec, tvec, t_class_name, t_class, box_key, sp_idx]
+                    rst_vecs = [rvec, tvec,
+                                t_class_name, t_class,
+                                box_key, sp_idx]
                     detections.append(rst_vecs)
 
         # visualize detections
@@ -518,7 +663,8 @@ def run_detection():
                         item_dict[item[2]] = 1
 
                     obj_info = dict()
-                    obj_info['id'] = '{}_{}'.format(item[2], item_dict[item[2]])
+                    obj_info['id'] = '{}_{}'.format(
+                        item[2], item_dict[item[2]])
                     obj_info['box_key'] = item[3] * 1000 + item[5]
 
                     pose = Marker()
