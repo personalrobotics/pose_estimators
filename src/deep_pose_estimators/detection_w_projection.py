@@ -41,7 +41,8 @@ from pytorch_retinanet.model.retinanet import RetinaNet
 from pytorch_retinanet.utils.encoder import DataEncoder
 from pytorch_retinanet.utils import utils
 
-from bite_selection_package.model.spnet import SPNet
+from bite_selection_package.model.spnet import SPNet, DenseSPNet
+from bite_selection_package.config import config as spnet_config
 import time
 
 
@@ -70,8 +71,10 @@ class DetectionWithProjection:
         self.spnet = None
         self.spnet_transform = None
 
-        self.angle_res = 18
-        self.mask_size = 17
+        self.angle_res = spnet_config.angle_res
+        self.mask_size = spnet_config.mask_size
+        self.use_densenet = spnet_config.use_densenet
+
         self.final_size = 512
         self.target_size = 136
 
@@ -151,12 +154,21 @@ class DetectionWithProjection:
         self.encoder = DataEncoder()
 
     def init_spnet(self):
-        self.spnet = SPNet()
-        if self.use_cuda:
-            ckpt = torch.load(os.path.expanduser(config.spnet_checkpoint))
+        if self.use_densenet:
+            print('Load DenseSPNet')
+            self.spnet = DenseSPNet()
         else:
-            ckpt = torch.load(os.path.expanduser(config.spnet_checkpoint),
-                              map_location='cpu')
+            print('Load SPNet')
+            self.spnet = SPNet()
+
+        if self.use_cuda:
+            ckpt = torch.load(
+                os.path.expanduser(spnet_config.checkpoint_filename))
+        else:
+            ckpt = torch.load(
+                os.path.expanduser(spnet_config.checkpoint_filename),
+                map_location='cpu')
+
         self.spnet.load_state_dict(ckpt['net'])
         self.spnet.eval()
         if self.use_cuda:
@@ -269,8 +281,6 @@ class DetectionWithProjection:
         pred_bmasks, pred_rmasks = self.spnet(
             torch.stack([transform(img)]).cuda())
 
-        # print(pred_bmasks)
-
         np.set_printoptions(
             edgeitems=30, linewidth=100000,
             formatter=dict(float=lambda x: "%.3g" % x))
@@ -281,11 +291,11 @@ class DetectionWithProjection:
 
         bmask = pred_bmasks[0].data.cpu().numpy()
         bmask = math_utils.softmax(bmask)
-        neg_pos = bmask < 0.5
+        neg_pos = bmask < 0.005
 
         rmask = pred_rmasks[0].data.cpu().numpy()
         rmask = math_utils.softmax(rmask, axis=1)
-        neg_rot = np.max(rmask, axis=1) < 0.5
+        neg_rot = np.max(rmask, axis=1) < 0.0
 
         rmask_prob = np.max(rmask, axis=1)
         rmask_prob = rmask_prob.reshape(self.mask_size, self.mask_size)
@@ -304,8 +314,10 @@ class DetectionWithProjection:
         rmask[neg_rot] = -2
         rmask = rmask.reshape(self.mask_size, self.mask_size)
 
-        sp_mode = 'group'
-        rotation_mode = 'alt'
+        bmask = bmask.reshape(self.mask_size, self.mask_size)
+
+        sp_mode = 'mask'  # group / mask
+        rotation_mode = 'normal'  # normal / alt
         sp_poses = list()
         sp_angles = list()
 
@@ -316,7 +328,7 @@ class DetectionWithProjection:
                 ri, ci = item[0]
                 rotation = item[1]
 
-                if rotation_mode = 'alt':
+                if rotation_mode == 'alt':
                     cp = self.mask_size / 2
                     rotation = -np.degrees(np.arctan2(ri - cp, ci - cp))
 
@@ -324,9 +336,10 @@ class DetectionWithProjection:
                 ix = ci * self.final_size / self.mask_size
                 iy = ri * self.final_size / self.mask_size
 
-                iw = (-np.sin(rotation * np.pi / 180.0) * 4 *
+                rot_rad = np.radians(rotation)
+                iw = (-np.sin(rot_rad) * 4 *
                       (self.final_size / self.target_size))
-                ih = (np.cos(rotation * np.pi / 180.0) * 4 *
+                ih = (np.cos(rot_rad) * 4 *
                       (self.final_size / self.target_size))
 
                 if -rotation == -1:
@@ -358,7 +371,7 @@ class DetectionWithProjection:
                 for ci in range(self.mask_size):
                     rotation = rmask[ri][ci]
                     if rotation >= -1:
-                        if rotation_mode = 'alt':
+                        if rotation_mode == 'alt':
                             cp = self.mask_size / 2
                             rotation = -np.degrees(
                                 np.arctan2(ri - cp, ci - cp))
@@ -367,15 +380,17 @@ class DetectionWithProjection:
                         ix = ci * self.final_size / self.mask_size
                         iy = ri * self.final_size / self.mask_size
 
-                        iw = (-np.sin(rotation * np.pi / 180.0) * 4 *
+                        rot_rad = np.radians(rotation)
+                        iw = (-np.sin(rot_rad) * 4 *
                               (self.final_size / self.target_size))
-                        ih = (np.cos(rotation * np.pi / 180.0) * 4 *
+                        ih = (np.cos(rot_rad) * 4 *
                               (self.final_size / self.target_size))
 
+                        rot_alpha = int(bmask[ri][ci] * 200) + 55
                         if -rotation == -1:
-                            line_color = (210, 40, 40, 250)
+                            line_color = (210, 40, 40, rot_alpha)
                         else:
-                            line_color = (30, 30, 250, 250)
+                            line_color = (30, 30, 250, rot_alpha)
 
                         draw.line(
                             (ix - iw, iy - ih, ix + iw, iy + ih),

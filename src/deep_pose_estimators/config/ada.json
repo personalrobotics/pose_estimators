@@ -14,8 +14,6 @@
     "checkpoint": "~/Workspace/ada_ws/src/deep_pose_estimators/src/deep_pose_estimators/external/pytorch_retinanet/checkpoint/food_ckpt.pth",
     "label_map": "~/Workspace/ada_ws/src/deep_pose_estimators/src/deep_pose_estimators/external/pytorch_retinanet/datasets/food_label_map.pkl",
 
-    "spnet_checkpoint": "~/Workspace/ada_ws/src/deep_pose_estimators/src/deep_pose_estimators/external/bite_selection_package/checkpoint/food_spnet_ckpt.pth",
-
     "node_title": "deep_pose",
     "frequency": 20
 }
