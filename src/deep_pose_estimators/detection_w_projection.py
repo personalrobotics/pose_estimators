@@ -163,10 +163,10 @@ class DetectionWithProjection:
 
         if self.use_cuda:
             ckpt = torch.load(
-                os.path.expanduser(spnet_config.checkpoint_filename))
+                os.path.expanduser(spnet_config.checkpoint_best_filename))
         else:
             ckpt = torch.load(
-                os.path.expanduser(spnet_config.checkpoint_filename),
+                os.path.expanduser(spnet_config.checkpoint_best_filename),
                 map_location='cpu')
 
         self.spnet.load_state_dict(ckpt['net'])
@@ -184,6 +184,28 @@ class DetectionWithProjection:
             label_map = pickle.load(f)
         assert label_map is not None, 'cannot load label map'
         self.label_map = label_map
+
+    def load_label_map(self):
+        with open(config.label_map, 'r') as f:
+            content = f.read().splitlines()
+            f.close()
+        assert content is not None, 'cannot find label map'
+
+        temp = list()
+        for line in content:
+            line = line.strip()
+            if (len(line) > 2 and
+                    (line.startswith('id') or
+                     line.startswith('name'))):
+                temp.append(line.split(':')[1].strip())
+
+        label_dict = dict()
+        for idx in range(0, len(temp), 2):
+            item_id = int(temp[idx])
+            item_name = temp[idx + 1][1:-1]
+            label_dict[item_id] = item_name
+
+        self.label_map = label_dict
 
     def get_box_coordinates(self, box, img_shape):
         txmin = int(box[0] * img_shape[0])
@@ -291,11 +313,11 @@ class DetectionWithProjection:
 
         bmask = pred_bmasks[0].data.cpu().numpy()
         bmask = math_utils.softmax(bmask)
-        neg_pos = bmask < 0.005
+        neg_pos = bmask < 0.001
 
         rmask = pred_rmasks[0].data.cpu().numpy()
         rmask = math_utils.softmax(rmask, axis=1)
-        neg_rot = np.max(rmask, axis=1) < 0.0
+        neg_rot = np.max(rmask, axis=1) < 0.5
 
         rmask_prob = np.max(rmask, axis=1)
         rmask_prob = rmask_prob.reshape(self.mask_size, self.mask_size)
@@ -309,7 +331,8 @@ class DetectionWithProjection:
         # # rmask_softmax = rmask_softmax.reshape(self.mask_size, self.mask_size)
 
         rmask = rmask_argmax * 180 / self.angle_res
-        rmask[rmask < 0] = -1
+        rmask[rmask < 0] = -2 # don't use "no rotation"
+        # rmask[rmask < 0] = -1 # do use "no rotation"
         rmask[neg_pos] = -2
         rmask[neg_rot] = -2
         rmask = rmask.reshape(self.mask_size, self.mask_size)
@@ -417,6 +440,7 @@ class DetectionWithProjection:
             msg_img = self.bridge.cv2_to_imgmsg(np.array(img), "rgb8")
             self.pub_spnet_img.publish(msg_img)
         return sp_poses, sp_angles
+        # return [[0.5, 0.5]], [0]
 
     def detect_objects(self):
         if self.img_msg is None:

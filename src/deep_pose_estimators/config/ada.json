@@ -10,9 +10,9 @@
 
     "camera_to_table": 0.335,
 
-    "num_classes": 17,
-    "checkpoint": "~/Workspace/ada_ws/src/deep_pose_estimators/src/deep_pose_estimators/external/pytorch_retinanet/checkpoint/food_ckpt.pth",
-    "label_map": "~/Workspace/ada_ws/src/deep_pose_estimators/src/deep_pose_estimators/external/pytorch_retinanet/datasets/food_label_map.pkl",
+    "num_classes": 8,
+    "checkpoint": "/home/herb/Workspace/ada_ws/src/deep_pose_estimators/src/deep_pose_estimators/external/pytorch_retinanet/checkpoint/food_c8_ckpt.pth",
+    "label_map": "/home/herb/Workspace/ada_ws/src/deep_pose_estimators/src/deep_pose_estimators/external/pytorch_retinanet/datasets/food_c8_label_map.pbtxt",
 
     "node_title": "deep_pose",
     "frequency": 20
