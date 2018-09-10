@@ -289,6 +289,7 @@ class DetectionWithProjection:
         return group_list
 
     def publish_spnet(self, sliced_img, identity, actuallyPublish = False):
+        return [[0.5, 0.5]], [-90]
         img_org = PILImage.fromarray(sliced_img.copy())
 
         ratio = float(self.target_size / max(img_org.size))
@@ -492,12 +493,15 @@ class DetectionWithProjection:
 
         # visualize depth
         draw = ImageDraw.Draw(img, 'RGBA')
-        # depth_pixels = list(depth_img.getdata())
-        # depth_pixels = [depth_pixels[i * w:(i + 1) * w] for i in xrange(h)]
+        # depth_pixels = list(depth_img)
+        # depth_pixels = [depth_pixels[i * 640:(i + 1) * 640] for i in xrange(480)]
         # for x in range(0, img.size[0]):
         #     for y in range(0, img.size[1]):
-        #         if (depth_pixels[y][x] < 0.001):
+        #         print
+        #         if (depth_img[y][x] < 0.001):
         #             draw.point((x,y), fill=(0,0,0))
+        #         elif (depth_img[y][x] > 400):
+        #             draw.point((x,y), fill=(0,1,0))
 
         if boxes is None or len(boxes) == 0:
             # print('no detection')
