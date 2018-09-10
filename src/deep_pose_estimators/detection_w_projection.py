@@ -331,8 +331,14 @@ class DetectionWithProjection:
         # # rmask_softmax = rmask_softmax.reshape(self.mask_size, self.mask_size)
 
         rmask = rmask_argmax * 180 / self.angle_res
-        rmask[rmask < 0] = -2 # don't use "no rotation"
-        # rmask[rmask < 0] = -1 # do use "no rotation"
+
+        # if identity == 'banana':
+        #     return [[0.5, 0.5]], [0]
+
+        if identity in ["celery", "carrot", ]:
+            rmask[rmask < 0] = -2 # don't use "no rotation"
+        else:
+            rmask[rmask < 0] = -1 # do use "no rotation"
         rmask[neg_pos] = -2
         rmask[neg_rot] = -2
         rmask = rmask.reshape(self.mask_size, self.mask_size)
