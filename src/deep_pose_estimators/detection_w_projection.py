@@ -43,6 +43,9 @@ from pytorch_retinanet.utils import utils
 
 from bite_selection_package.model.spnet import SPNet, DenseSPNet
 from bite_selection_package.config import config as spnet_config
+
+from laura_model1.run_test import Model1
+
 import time
 
 
@@ -56,20 +59,26 @@ class DetectionWithProjection:
             self.point3f_list = point3f_list
             self.descriptors = descriptors
 
-    def __init__(self, title='DetectionWithProjection', use_spnet=True, use_cuda=True):
+    def __init__(self, title='DetectionWithProjection',
+                 use_spnet=True, use_cuda=True, use_model1=False):
         self.title = title
 
         self.img_msg = None
         self.depth_img_msg = None
-        self.net = None
-        self.transform = None
+        self.retinanet = None
+        self.retinanet_transform = None
         self.label_map = None
         self.encoder = None
 
-        self.use_spnet = use_spnet
         self.use_cuda = use_cuda
+
+        self.use_spnet = use_spnet
         self.spnet = None
         self.spnet_transform = None
+
+        self.use_model1 = use_model1
+        self.model1 = None
+        self.model1_transform = None
 
         self.angle_res = spnet_config.angle_res
         self.mask_size = spnet_config.mask_size
@@ -134,22 +143,22 @@ class DetectionWithProjection:
         self.camera_info = ros_data
 
     def init_retinanet(self):
-        self.net = RetinaNet(config.num_classes)
+        self.retinanet = RetinaNet()
         if self.use_cuda:
             ckpt = torch.load(os.path.expanduser(config.checkpoint))
         else:
             ckpt = torch.load(os.path.expanduser(config.checkpoint), map_location='cpu')
-        self.net.load_state_dict(ckpt['net'])
-        self.net.eval()
+        self.retinanet.load_state_dict(ckpt['net'])
+        self.retinanet.eval()
         if self.use_cuda:
-            net = self.net.cuda()
+            self.retinanet = self.retinanet.cuda()
 
         print('Loaded RetinaNet.')
-        print(self.net)
+        print(self.retinanet)
 
-        self.transform = transforms.Compose([
+        self.retinanet_transform = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+            # transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
         ])
         self.encoder = DataEncoder()
 
@@ -172,11 +181,33 @@ class DetectionWithProjection:
         self.spnet.load_state_dict(ckpt['net'])
         self.spnet.eval()
         if self.use_cuda:
-            spnet = self.spnet.cuda()
+            self.spnet = self.spnet.cuda()
 
         self.spnet_transform = transforms.Compose([
             transforms.ToTensor(),
             # transforms.Normalize((0.562, 0.370, 0.271), (0.332, 0.302, 0.281))
+        ])
+
+    def init_model1(self):
+        print('Load Laura\'s Model1')
+        self.model1 = Model1()
+
+        if self.use_cuda:
+            ckpt = torch.load(
+                './external/laura_model1/checkpoint/model1_ckpt.pth')
+        else:
+            ckpt = torch.load(
+                './external/laura_model1/checkpoint/model1_ckpt.pth',
+                map_location='cpu')
+
+        self.model1.load_state_dict(ckpt['net'])
+        self.model1.eval()
+        if self.use_cuda:
+            self.model1 = self.model1.cuda()
+
+        self.model1_transform = transforms.Compose([
+            transforms.Resize(size=(32, 32)),
+            transforms.ToTensor(),
         ])
 
     def load_label_map(self):
@@ -186,7 +217,7 @@ class DetectionWithProjection:
         self.label_map = label_map
 
     def load_label_map(self):
-        with open(config.label_map, 'r') as f:
+        with open(os.path.expanduser(config.label_map), 'r') as f:
             content = f.read().splitlines()
             f.close()
         assert content is not None, 'cannot find label map'
@@ -468,11 +499,15 @@ class DetectionWithProjection:
 
         if self.depth_img_msg is None:
             print('no input depth stream')
-            # self.depth_img_msg = np.ones(self.img_msg.shape[:2])
-            return list()
+            self.depth_img_msg = np.ones(self.img_msg.shape[:2])
+            # return list()
 
-        if self.net is None:
-            self.init_retinanet()
+        if self.use_model1:
+            if self.model1 is None:
+                self.init_model1()
+        else:
+            if self.retinanet is None:
+                self.init_retinanet()
 
         if self.use_spnet and self.spnet is None:
             self.init_spnet()
@@ -486,18 +521,49 @@ class DetectionWithProjection:
         # depth_img = PILImage.fromarray(depth)
         width, height = img.size
 
-        x = self.transform(img)
-        x = x.unsqueeze(0)
-        with torch.no_grad():
-            if self.use_cuda:
-                loc_preds, cls_preds = self.net(x.cuda())
-            else:
-                loc_preds, cls_preds = self.net(x)
+        if self.use_model1:
+            rmax, cmax = img.size
+            crop_size = 70
+            step_size = 20
 
-            boxes, labels, scores = self.encoder.decode(
-                loc_preds.cpu().data.squeeze(),
-                cls_preds.cpu().data.squeeze(),
-                (width, height))
+            boxes = list()
+            labels = list()
+            scores = list()
+
+            for ri in range(0, rmax - crop_size, step_size):
+                for ci in range(0, cmax - crop_size, step_size):
+                    this_cropped_img = img.crop(
+                        (ri, ci, ri + crop_size, ci + crop_size))
+
+                    x = self.model1_transform(this_cropped_img)
+                    x = x.unsqueeze(0)
+                    with torch.no_grad():
+                        if self.use_cuda:
+                            x = x.cuda()
+                        score = torch.sigmoid(self.model1(x)).cpu().data.squeeze()
+
+                        if score > 1 - 1e-5:
+                            boxes.append(
+                                [ri, ci, ri + crop_size, ci + crop_size])
+                            labels.append(1)
+                            scores.append(score)
+            boxes = torch.Tensor(boxes)
+            labels = torch.Tensor(labels)
+            scores = torch.Tensor(scores)
+
+        else:
+            x = self.retinanet_transform(img)
+            x = x.unsqueeze(0)
+            with torch.no_grad():
+                if self.use_cuda:
+                    loc_preds, cls_preds = self.retinanet(x.cuda())
+                else:
+                    loc_preds, cls_preds = self.retinanet(x)
+
+                boxes, labels, scores = self.encoder.decode(
+                    loc_preds.cpu().data.squeeze(),
+                    cls_preds.cpu().data.squeeze(),
+                    (width, height))
 
         # sp_poses = [[0.0, 0.0], [1.0, 1.0]]
         sp_poses = [[0.5, 0.5]]
@@ -562,8 +628,10 @@ class DetectionWithProjection:
                     spBoxIdx = box_idx
                     cropped_img = copied_img_msg[
                         int(tymin):int(tymax), int(txmin):int(txmax)]
-                    sp_poses, sp_angles = self.publish_spnet(
-                        cropped_img, t_class_name, True)
+
+                    if self.use_spnet:
+                        sp_poses, sp_angles = self.publish_spnet(
+                            cropped_img, t_class_name, True)
                     self.last_class_name = t_class_name
                     break
 
@@ -580,8 +648,10 @@ class DetectionWithProjection:
                 break
             cropped_img = copied_img_msg[
                 int(tymin):int(tymax), int(txmin):int(txmax)]
-            sp_poses, sp_angles = self.publish_spnet(
-                cropped_img, t_class_name, False)
+
+            if self.use_spnet:
+                sp_poses, sp_angles = self.publish_spnet(
+                    cropped_img, t_class_name, False)
 
             cropped_depth = depth_img[int(tymin):int(tymax), int(txmin):int(txmax)]
             z0 = self.calculate_depth(cropped_depth)
@@ -701,7 +771,8 @@ def run_detection():
     rospy.init_node(config.node_title)
     rcnn_projection = DetectionWithProjection(
         title=config.node_title,
-        use_spnet=True)
+        use_spnet=False,
+        use_model1=True)
 
     try:
         pub_pose = rospy.Publisher(
