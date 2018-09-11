@@ -289,7 +289,19 @@ class DetectionWithProjection:
         return group_list
 
     def publish_spnet(self, sliced_img, identity, actuallyPublish = False):
-        return [[0.5, 0.5]], [-90]
+        # return [[0.5, 0.5]], [-90]
+        should_publish_spnet = True
+        if rospy.has_param('/deep_pose/publish_spnet'):
+            should_publish_spnet = rospy.get_param('/deep_pose/publish_spnet')
+        if not should_publish_spnet:
+            return [[0.5, 0.5]], [-90]
+
+        spnet_food_name = 'all'
+        if rospy.has_param('/deep_pose/spnet_food_name'):
+            spnet_food_name = rospy.get_param('/deep_pose/spnet_food_name')
+        if spnet_food_name != 'all' and spnet_food_name != identity:
+            return [], []
+
         img_org = PILImage.fromarray(sliced_img.copy())
 
         ratio = float(self.target_size / max(img_org.size))
