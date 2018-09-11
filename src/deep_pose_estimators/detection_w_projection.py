@@ -238,6 +238,12 @@ class DetectionWithProjection:
 
         self.label_map = label_dict
 
+    def get_index_of_class_name(self, class_name):
+        for index, name in self.label_map:
+            if name == class_name:
+                return index
+        return -1
+
     def get_box_coordinates(self, box, img_shape):
         txmin = int(box[0] * img_shape[0])
         tymin = int(box[1] * img_shape[1])
@@ -332,6 +338,10 @@ class DetectionWithProjection:
             spnet_food_name = rospy.get_param('/deep_pose/spnet_food_name')
         if spnet_food_name != 'all' and spnet_food_name != identity:
             return [], []
+
+        invert_spnet_direction = False
+        if rospy.has_param('/deep_pose/invertSPNetDirection'):
+            invert_spnet_direction = rospy.get_param('/deep_pose/invertSPNetDirection')
 
         img_org = PILImage.fromarray(sliced_img.copy())
 
@@ -434,8 +444,12 @@ class DetectionWithProjection:
                 x2 = 0.5 - ci / float(self.mask_size)
                 y2 = 0.5 - ri / float(self.mask_size)
                 a = x1 * y2 - x2 * y1
-                if a > 0:
-                    rotation += 180
+                if invert_spnet_direction:
+                    if a < 0:
+                        rotation += 180
+                else:
+                    if a > 0:
+                        rotation += 180
                 sp_angles.append(rotation)
 
         else:  # sp_mode = 'mask'
@@ -479,8 +493,12 @@ class DetectionWithProjection:
                         x2 = 0.5 - ci / float(self.mask_size)
                         y2 = 0.5 - ri / float(self.mask_size)
                         a = x1 * y2 - x2 * y1
-                        if a > 0:
-                            rotation += 180
+                        if invert_spnet_direction:
+                            if a < 0:
+                                rotation += 180
+                        else:
+                            if a > 0:
+                                rotation += 180
                         sp_angles.append(rotation)
                         # done = True
                     if done: break
@@ -520,6 +538,12 @@ class DetectionWithProjection:
         depth_img = self.depth_img_msg.copy()
         # depth_img = PILImage.fromarray(depth)
         width, height = img.size
+
+        force_food = False
+        force_food_name = "testberry"
+        if rospy.has_param('/deep_pose/forceFood') and rospy.has_param('/deep_pose/forceFoodName'):
+            force_food = rospy.get_param('/deep_pose/forceFood')
+            force_food_name = rospy.get_param('/deep_pose/forceFoodName')
 
         if self.use_model1:
             rmax, cmax = img.size
@@ -620,6 +644,9 @@ class DetectionWithProjection:
             for box_idx in range(len(boxes)):
                 t_class = labels[box_idx].item()
                 t_class_name = self.label_map[t_class]
+                if force_food:
+                    t_class_name = force_food_name
+                    t_class = get_index_of_class_name(t_class_name)
                 if (t_class_name == self.selector_food_names[self.selector_index]) or True:
                     txmin, tymin, txmax, tymax = boxes[box_idx].numpy() - bbox_offset
                     if (txmin < 0 or tymin < 0 or txmax > width or tymax > height):
@@ -642,6 +669,9 @@ class DetectionWithProjection:
         for box_idx in range(len(boxes)):
             t_class = labels[box_idx].item()
             t_class_name = self.label_map[t_class]
+            if force_food:
+                t_class_name = force_food_name
+                t_class = get_index_of_class_name(t_class_name)
 
             txmin, tymin, txmax, tymax = boxes[box_idx].numpy() - bbox_offset
             if (txmin < 0 or tymin < 0 or txmax > width or tymax > height):
@@ -704,6 +734,9 @@ class DetectionWithProjection:
         for idx in range(len(boxes)):
             box = boxes[idx].numpy() - bbox_offset
             label = labels[idx]
+            if force_food:
+                label = force_food_name
+
             draw.rectangle(box, outline=(255, 0, 0, 200))
 
             item_tag = '{0}: {1:.2f}'.format(
@@ -771,8 +804,8 @@ def run_detection():
     rospy.init_node(config.node_title)
     rcnn_projection = DetectionWithProjection(
         title=config.node_title,
-        use_spnet=False,
-        use_model1=True)
+        use_spnet=True,
+        use_model1=False)
 
     try:
         pub_pose = rospy.Publisher(
