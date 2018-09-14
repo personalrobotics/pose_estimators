@@ -99,11 +99,12 @@ def train_model1():
     start_epoch = 0
 
     transform = transforms.Compose([
+        transforms.Resize(size=(32, 32)),
         transforms.ToTensor()])
 
     print('Loading dataset')
     trainset = Model1Dataset(
-        base_dir='./color_overhead/train',
+        base_dir='./data/train',
         transform=transform,
         train=True)
     trainloader = torch.utils.data.DataLoader(
@@ -112,7 +113,7 @@ def train_model1():
         collate_fn=trainset.collate_fn)
 
     testset = Model1Dataset(
-        base_dir='./color_overhead/validate',
+        base_dir='./data/validate',
         transform=transform,
         train=False)
     testloader = torch.utils.data.DataLoader(
