@@ -126,9 +126,12 @@ class DataCollection:
         # depth_img = PILImage.fromarray(depth)
         width, height = img.size
 
-        cropped_area_size = 70
-        xmin = int((width - cropped_area_size) * 0.5)
-        ymin = int((height - cropped_area_size) * 0.5)
+
+        xoffset = 55
+        yoffset = -35
+        cropped_area_size = 110
+        xmin = int((width - cropped_area_size) * 0.5) + xoffset
+        ymin = int((height - cropped_area_size) * 0.5) + yoffset
         xmax = xmin + cropped_area_size
         ymax = ymin + cropped_area_size
 
