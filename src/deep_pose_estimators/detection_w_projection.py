@@ -36,7 +36,7 @@ external_path = os.path.join(
     pkg_base, 'src/deep_pose_estimators/external')
 sys.path.append(external_path)
 from pytorch_retinanet.model.retinanet import RetinaNet
-from pytorch_retinanet.utils.encoder import DataEncoder
+from pytorch_retinanet.retinanet_utils.encoder import DataEncoder
 
 from bite_selection_package.model.spnet import SPNet, DenseSPNet
 from bite_selection_package.spnet_config import config as spnet_config
