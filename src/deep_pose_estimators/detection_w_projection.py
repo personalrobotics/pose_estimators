@@ -567,7 +567,7 @@ class DetectionWithProjection:
                         if score > 0.55:
                             boxes.append(
                                 [ri, ci, ri + crop_size, ci + crop_size])
-                            labels.append(1)
+                            labels.append(-1)
                             scores.append(score)
             boxes = torch.Tensor(boxes)
             labels = torch.Tensor(labels)
@@ -641,7 +641,10 @@ class DetectionWithProjection:
         for _ in range(len(self.selector_food_names)):
             for box_idx in range(len(boxes)):
                 t_class = labels[box_idx].item()
-                t_class_name = self.label_map[t_class]
+                if t_class == -1:
+                    t_class_name = 'sample'
+                else:
+                    t_class_name = self.label_map[t_class]
                 if force_food:
                     t_class_name = force_food_name
                     t_class = self.get_index_of_class_name(t_class_name)
@@ -668,7 +671,10 @@ class DetectionWithProjection:
 
         for box_idx in range(len(boxes)):
             t_class = labels[box_idx].item()
-            t_class_name = self.label_map[t_class]
+            if t_class == -1:
+                t_class_name = 'sample'
+            else:
+                t_class_name = self.label_map[t_class]
             if force_food:
                 t_class_name = force_food_name
                 t_class = self.get_index_of_class_name(t_class_name)
@@ -733,7 +739,7 @@ class DetectionWithProjection:
                     detections.append(rst_vecs)
 
         # visualize detections
-        fnt = ImageFont.truetype('Pillow/Tests/fonts/DejaVuSans.ttf', 11)
+        fnt = ImageFont.truetype('Pillow/Tests/fonts/DejaVuSans.ttf', 12)
         for idx in range(len(boxes)):
             box = boxes[idx].numpy() - bbox_offset
             label = labels[idx]
@@ -742,6 +748,12 @@ class DetectionWithProjection:
                 food_name = force_food_name
 
             draw.rectangle(box, outline=(255, 0, 0, 200))
+            box1 = box + 1
+            box1[:2] -= 2
+            draw.rectangle(box1, outline=(255, 0, 0, 200))
+            box2 = box + 2
+            box2[:2] -= 4
+            draw.rectangle(box2, outline=(255, 0, 0, 200))
 
             item_tag = '{0}: {1:.2f}'.format(
                 food_name,
