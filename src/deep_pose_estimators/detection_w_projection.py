@@ -144,7 +144,7 @@ class DetectionWithProjection:
         self.camera_info = ros_data
 
     def init_retinanet(self):
-        self.retinanet = RetinaNet(config.num_classes)
+        self.retinanet = RetinaNet()
         if self.use_cuda:
             ckpt = torch.load(os.path.expanduser(config.checkpoint))
         else:
