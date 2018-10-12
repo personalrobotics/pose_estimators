@@ -55,7 +55,7 @@ class DetectionWithProjection:
             self.descriptors = descriptors
 
     def __init__(self, title='DetectionWithProjection',
-                 use_spnet=True, use_cuda=True, use_model1=False):
+                 use_spnet=True, use_model1=False):
         self.title = title
 
         self.img_msg = None
@@ -65,7 +65,7 @@ class DetectionWithProjection:
         self.label_map = None
         self.encoder = None
 
-        self.use_cuda = use_cuda
+        self.use_cuda = torch.cuda.is_available()
 
         self.use_spnet = use_spnet
         self.spnet = None
