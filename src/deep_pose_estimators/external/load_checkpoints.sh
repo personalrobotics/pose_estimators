@@ -1,16 +1,10 @@
 #!/bin/bash
 
-if [[ $1 == "spnet" ]]; then
-  echo "load spnet from mthrbrn"
-  scp -r prl@mthrbrn.personalrobotics.cs.washington.edu:/mnt/hard_data/GitHub/bite_selection_package/checkpoint ./bite_selection_package/
-elif [[ $1 == "model1" ]]; then
-  echo "load model1 from mthrbrn"
-  scp -r prl@mthrbrn.personalrobotics.cs.washington.edu:/mnt/hard_data/catkin_ws/src/deep_pose_estimators/src/deep_pose_estimators/external/laura_model1/checkpoint ./laura_model1
-else
-  echo "load retinanet from mthrbrn"
-  scp -r prl@mthrbrn.personalrobotics.cs.washington.edu:/mnt/hard_data/GitHub/pytorch-retinanet-foods/checkpoint ./pytorch_retinanet/
-  scp -r prl@mthrbrn.personalrobotics.cs.washington.edu:/mnt/hard_data/GitHub/pytorch-retinanet-foods/pretrained ./pytorch_retinanet/
-fi
+echo "load checkpoints for spnet"
+wget -q https://personalrobotics.cs.washington.edu/shared_data/bite_selection_package/checkpoint/food_spnet_c6_dense_3_6_a_18_ckpt.pth -P ./bite_selection_package/checkpoint/
 
+echo "load checkpoints for retinanet"
+wget -q https://personalrobotics.cs.washington.edu/shared_data/pytorch_retinanet/checkpoint/food_c6_ckpt.pth -P ./pytorch_retinanet/checkpoint/
+wget -q https://personalrobotics.cs.washington.edu/shared_data/pytorch_retinanet/pretrained/food_c6_net.pth -P ./pytorch_retinanet/pretrained/
 
 
