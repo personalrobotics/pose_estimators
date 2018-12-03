@@ -820,7 +820,7 @@ def run_detection():
     rospy.init_node(config.node_title)
     rcnn_projection = DetectionWithProjection(
         title=config.node_title,
-        use_spnet=False,
+        use_spnet=True,
         use_model1=False)
 
     try:
