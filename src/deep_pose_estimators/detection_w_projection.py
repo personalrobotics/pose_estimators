@@ -55,7 +55,7 @@ class DetectionWithProjection:
             self.descriptors = descriptors
 
     def __init__(self, title='DetectionWithProjection',
-                 use_spnet=True, use_model1=False):
+                 use_spnet=True, use_cuda=True, use_model1=False):
         self.title = title
 
         self.img_msg = None
@@ -65,7 +65,7 @@ class DetectionWithProjection:
         self.label_map = None
         self.encoder = None
 
-        self.use_cuda = torch.cuda.is_available()
+        self.use_cuda = use_cuda
 
         self.use_spnet = use_spnet
         self.spnet = None
@@ -156,21 +156,18 @@ class DetectionWithProjection:
             self.retinanet = self.retinanet.cuda()
 
         print('Loaded RetinaNet.')
-        # print(self.retinanet)
 
         self.retinanet_transform = transforms.Compose([
             transforms.ToTensor(),
-            # transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
         ])
         self.encoder = DataEncoder()
 
     def init_spnet(self):
         if self.use_densenet:
-            print('Load DenseSPNet')
             self.spnet = DenseSPNet()
         else:
-            print('Load SPNet')
             self.spnet = SPNet()
+        print('Loaded {}SPNet'.format('Dense' if self.use_densenet else ''))
 
         if self.use_cuda:
             ckpt = torch.load(
@@ -192,7 +189,6 @@ class DetectionWithProjection:
         ])
 
     def init_model1(self):
-        print('Load Laura\'s Model1')
         self.model1 = Model1()
 
         if self.use_cuda:
@@ -210,16 +206,12 @@ class DetectionWithProjection:
         if self.use_cuda:
             self.model1 = self.model1.cuda()
 
+        print('Loaded Laura\'s Model1')
+
         self.model1_transform = transforms.Compose([
             transforms.Resize(size=(32, 32)),
             transforms.ToTensor(),
         ])
-
-    def load_label_map(self):
-        with open(os.path.expanduser(config.label_map), 'r') as f:
-            label_map = pickle.load(f)
-        assert label_map is not None, 'cannot load label map'
-        self.label_map = label_map
 
     def load_label_map(self):
         with open(os.path.expanduser(config.label_map), 'r') as f:
@@ -331,7 +323,6 @@ class DetectionWithProjection:
         return group_list
 
     def publish_spnet(self, sliced_img, identity, actuallyPublish = False):
-        # return [[0.5, 0.5]], [-90]
         should_publish_spnet = True
         if rospy.has_param('/deep_pose/publish_spnet'):
             should_publish_spnet = rospy.get_param('/deep_pose/publish_spnet')
@@ -504,7 +495,6 @@ class DetectionWithProjection:
             msg_img = self.bridge.cv2_to_imgmsg(np.array(img), "rgb8")
             self.pub_spnet_img.publish(msg_img)
         return sp_poses, sp_angles
-        # return [[0.5, 0.5]], [0]
 
     def detect_objects(self):
         if self.img_msg is None:
@@ -514,7 +504,6 @@ class DetectionWithProjection:
         if self.depth_img_msg is None:
             print('no input depth stream')
             self.depth_img_msg = np.ones(self.img_msg.shape[:2])
-            # return list()
 
         if self.use_model1:
             if self.model1 is None:
@@ -532,7 +521,6 @@ class DetectionWithProjection:
         copied_img_msg = self.img_msg.copy()
         img = PILImage.fromarray(copied_img_msg.copy())
         depth_img = self.depth_img_msg.copy()
-        # depth_img = PILImage.fromarray(depth)
         width, height = img.size
 
         force_food = False
@@ -587,24 +575,10 @@ class DetectionWithProjection:
                     cls_preds.cpu().data.squeeze(),
                     (width, height))
 
-        # sp_poses = [[0.0, 0.0], [1.0, 1.0]]
         sp_poses = [[0.5, 0.5]]
         sp_angles = [-90]
 
-        # visualize depth
-        draw = ImageDraw.Draw(img, 'RGBA')
-        # depth_pixels = list(depth_img)
-        # depth_pixels = [depth_pixels[i * 640:(i + 1) * 640] for i in xrange(480)]
-        # for x in range(0, img.size[0]):
-        #     for y in range(0, img.size[1]):
-        #         print
-        #         if (depth_img[y][x] < 0.001):
-        #             draw.point((x,y), fill=(0,0,0))
-        #         elif (depth_img[y][x] > 400):
-        #             draw.point((x,y), fill=(0,1,0))
-
         if boxes is None or len(boxes) == 0:
-            # print('no detection')
             msg_img = self.bridge.cv2_to_imgmsg(np.array(img), "rgb8")
             self.pub_img.publish(msg_img)
             return list()
@@ -621,8 +595,6 @@ class DetectionWithProjection:
         cam_fy = camera_matrix[1, 1]
         cam_cx = camera_matrix[0, 2]
         cam_cy = camera_matrix[1, 2]
-        # cam_cx = 320
-        # cam_cy = 240
 
         rvec = np.array([0.0, 0.0, 0.0])
 
@@ -645,13 +617,15 @@ class DetectionWithProjection:
                     t_class_name = 'sample'
                 else:
                     t_class_name = self.label_map[t_class]
+
                 if force_food:
                     t_class_name = force_food_name
                     t_class = self.get_index_of_class_name(t_class_name)
-                if (t_class_name == self.selector_food_names[self.selector_index]) or True:
+
+                if (t_class_name == self.selector_food_names[self.selector_index]):
                     txmin, tymin, txmax, tymax = boxes[box_idx].numpy() - bbox_offset
-                    # if (txmin < 0 or tymin < 0 or txmax > width or tymax > height):
-                    #     break
+                    if (txmin < 0 or tymin < 0 or txmax > width or tymax > height):
+                        continue
                     found = True
                     spBoxIdx = box_idx
                     cropped_img = copied_img_msg[
@@ -680,8 +654,9 @@ class DetectionWithProjection:
                 t_class = self.get_index_of_class_name(t_class_name)
 
             txmin, tymin, txmax, tymax = boxes[box_idx].numpy() - bbox_offset
-            # if (txmin < 0 or tymin < 0 or txmax > width or tymax > height):
-            #     break
+            if (txmin < 0 or tymin < 0 or txmax > width or tymax > height):
+                continue
+
             cropped_img = copied_img_msg[
                 int(max(tymin,0)):int(min(tymax, height)),
                 int(max(txmin,0)):int(min(txmax, width))]
@@ -695,11 +670,10 @@ class DetectionWithProjection:
                 int(max(txmin,0)):int(min(txmax, width))]
             z0 = self.calculate_depth(cropped_depth)
             if z0 < 0:
-                print("skipping " + t_class_name + " because depth invalid")
+                print("skipping " + t_class_name + " due to invalid z0")
                 continue
 
             if spBoxIdx >= 0:
-
                 for sp_idx in range(len(sp_poses)):
                     box_key = '{}_{}_{}_{}'.format(
                         t_class_name, int(txmin), int(tymin), sp_idx)
@@ -710,19 +684,13 @@ class DetectionWithProjection:
                     tyoff = (tymax - tymin) * this_pos[1]
                     pt = [txmin + txoff, tymin + tyoff]
 
-                    diff = 30
+                    coff = 60
                     cropped_depth = depth_img[
-                        int(pt[1]-diff):int(pt[1]+diff),
-                        int(pt[0]-diff):int(pt[1]+diff)]
+                        int(pt[1]-coff):int(pt[1]+coff),
+                        int(pt[0]-coff):int(pt[1]+coff)]
                     current_z0 = self.calculate_depth(cropped_depth)
                     if (current_z0 < 0):
-                        diff = 70
-                        cropped_depth = depth_img[
-                            int(pt[1]-diff):int(pt[1]+diff),
-                            int(pt[0]-diff):int(pt[1]+diff)]
-                        current_z0 = self.calculate_depth(cropped_depth)
-                        if current_z0 < 0:
-                            current_z0 = z0
+                        current_z0 = z0
 
                     x, y, z, w = math_utils.angles_to_quaternion(
                         this_ang + 90, 0., 0.)
@@ -815,11 +783,13 @@ def run_detection():
     if config is None:
         return
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = config.gpus
+    if config.use_cuda == 'true':
+        os.environ['CUDA_VISIBLE_DEVICES'] = config.gpus
 
     rospy.init_node(config.node_title)
     rcnn_projection = DetectionWithProjection(
         title=config.node_title,
+        use_cuda=(config.use_cuda == 'true'),
         use_spnet=False,
         use_model1=False)
 
@@ -883,8 +853,6 @@ def run_detection():
                     poses.append(pose)
 
             pub_pose.publish(poses)
-
-            #rospy.loginfo(update_timestamp_str)
             rate.sleep()
 
     except rospy.ROSInterruptException:
