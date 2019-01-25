@@ -1,6 +1,8 @@
 [submodule "src/deep_pose_estimators/external/bite_selection_package"]
-	path = src/deep_pose_estimators/external/bite_selection_package
-	url = https://github.com/personalrobotics/bite_selection_package.git
-[submodule "src/deep_pose_estimators/external/pytorch-retinanet"]
-	path = src/deep_pose_estimators/external/pytorch-retinanet
-	url = https://github.com/yskim041/pytorch-retinanet.git
+  path = src/deep_pose_estimators/external/bite_selection_package
+  url = https://github.com/personalrobotics/bite_selection_package.git
+  branch = ada
+[submodule "src/deep_pose_estimators/external/pytorch_retinanet"]
+	path = src/deep_pose_estimators/external/pytorch_retinanet
+  url = https://github.com/personalrobotics/pytorch_retinanet.git
+  branch = ada

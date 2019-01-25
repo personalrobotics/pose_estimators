@@ -27,18 +27,22 @@ from sensor_msgs.msg import CompressedImage, Image, CameraInfo
 import sensor_msgs.point_cloud2 as pc2
 from cv_bridge import CvBridge
 
+from utils import math_utils
 from utils import pcl_utils
 
 rospack = rospkg.RosPack()
 pkg_base = rospack.get_path('deep_pose_estimators')
 
-sys.path.append(os.path.join(
-    pkg_base, 'src/deep_pose_estimators/external'))
+external_path = os.path.join(
+    pkg_base, 'src/deep_pose_estimators/external')
+sys.path.append(external_path)
 from pytorch_retinanet.model.retinanet import RetinaNet
-from pytorch_retinanet.utils.encoder import DataEncoder
-from pytorch_retinanet.utils import utils as retinanet_utils
+from pytorch_retinanet.retinanet_utils.encoder import DataEncoder
 
-from bite_selection_package.model.spnet import SPNet
+from bite_selection_package.model.spnet import SPNet, DenseSPNet
+from bite_selection_package.spnet_config import config as spnet_config
+
+from laura_model1.run_test import Model1
 
 
 # An application for the food manipulation project
@@ -48,15 +52,18 @@ class DetectionWithProjection:
             self.point3f_list = point3f_list
             self.descriptors = descriptors
 
-    def __init__(self, title='DetectionWithProjection', use_spnet=False):
+    def __init__(self, title='DetectionWithProjection',
+                 use_spnet=True, use_cuda=True, use_model1=False):
         self.title = title
 
         self.img_msg = None
         self.depth_img_msg = None
-        self.net = None
-        self.transform = None
+        self.retinanet = None
+        self.retinanet_transform = None
         self.label_map = None
         self.encoder = None
+
+        self.use_cuda = use_cuda
 
         self.agg_pc_data = list()
         self.camera_to_table = conf.camera_to_table
@@ -65,10 +72,41 @@ class DetectionWithProjection:
         self.spnet = None
         self.spnet_transform = None
 
+        self.use_model1 = use_model1
+        self.model1 = None
+        self.model1_transform = None
+
+        self.angle_res = spnet_config.angle_res
+        self.mask_size = spnet_config.mask_size
+        self.use_densenet = spnet_config.use_densenet
+        self.target_position = np.array([320, 240])
+
+        self.final_size = 512
+        self.target_size = 136
+
+        self.camera_tilt = 1e-5
+
         self.init_ros_subscribers()
         self.init_ros_publishers()
 
+        self.pub_img = rospy.Publisher(
+            '{}/detection_image'.format(self.title),
+            Image,
+            queue_size=2)
+        self.pub_target_img = rospy.Publisher(
+            '{}/target_image'.format(self.title),
+            Image,
+            queue_size=2)
+        self.pub_spnet_img = rospy.Publisher(
+            '{}/spnet_image'.format(self.title),
+            Image,
+            queue_size=2)
+
         self.bridge = CvBridge()
+
+        self.selector_food_names = [
+            "carrot", "melon", "apple", "banana", "strawberry"]
+        self.selector_index = 0
 
     def init_ros_subscribers(self):
         # subscribe image topic
@@ -161,40 +199,77 @@ class DetectionWithProjection:
             self.pub_table.publish(new_ros_msg)
 
     def init_retinanet(self):
-        self.net = RetinaNet(conf.num_classes)
-        ckpt = torch.load(conf.checkpoint)
-        self.net.load_state_dict(ckpt['net'])
-        self.net.eval()
-        self.net.cuda()
+        self.retinanet = RetinaNet()
+        if self.use_cuda:
+            ckpt = torch.load(os.path.expanduser(config.checkpoint))
+        else:
+            ckpt = torch.load(
+                os.path.expanduser(config.checkpoint), map_location='cpu')
+        self.retinanet.load_state_dict(ckpt['net'])
+        self.retinanet.eval()
+        if self.use_cuda:
+            self.retinanet = self.retinanet.cuda()
 
         print('Loaded RetinaNet.')
-        print(self.net)
 
-        self.transform = transforms.Compose([
+        self.retinanet_transform = transforms.Compose([
             transforms.ToTensor(),
-            # transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
         ])
         self.encoder = DataEncoder()
 
     def init_spnet(self):
-        self.spnet = SPNet()
-        ckpt = torch.load(conf.spnet_checkpoint)
+        if self.use_densenet:
+            self.spnet = DenseSPNet()
+        else:
+            self.spnet = SPNet()
+        print('Loaded {}SPNet'.format('Dense' if self.use_densenet else ''))
+
+        if self.use_cuda:
+            ckpt = torch.load(
+                os.path.expanduser(spnet_config.checkpoint_best_filename))
+        else:
+            ckpt = torch.load(
+                os.path.expanduser(spnet_config.checkpoint_best_filename),
+                map_location='cpu')
+
         self.spnet.load_state_dict(ckpt['net'])
         self.spnet.eval()
-        self.spnet.cuda()
+        if self.use_cuda:
+            self.spnet = self.spnet.cuda()
 
         self.spnet_transform = transforms.Compose([
-            transforms.ToTensor()])
-            # transforms.Normalize((0.562, 0.370, 0.271), (0.332, 0.302, 0.281))])
+            transforms.ToTensor(),
+            # transforms.Normalize(
+            #     (0.562, 0.370, 0.271), (0.332, 0.302, 0.281))
+        ])
 
-    def load_label_map_from_pkl(self):
-        with open(conf.label_map, 'r') as f:
-            label_map = pickle.load(f)
-        assert label_map is not None, 'cannot load label map'
-        self.label_map = label_map
+    def init_model1(self):
+        self.model1 = Model1()
+
+        if self.use_cuda:
+            ckpt = torch.load(os.path.join(
+                    os.path.dirname(__file__),
+                    'external/laura_model1/checkpoint/model1_ckpt.pth'))
+        else:
+            ckpt = torch.load(os.path.join(
+                    os.path.dirname(__file__),
+                    'external/laura_model1/checkpoint/model1_ckpt.pth'),
+                map_location='cpu')
+
+        self.model1.load_state_dict(ckpt['net'])
+        self.model1.eval()
+        if self.use_cuda:
+            self.model1 = self.model1.cuda()
+
+        print('Loaded Laura\'s Model1')
+
+        self.model1_transform = transforms.Compose([
+            transforms.Resize(size=(32, 32)),
+            transforms.ToTensor(),
+        ])
 
     def load_label_map(self):
-        with open(conf.label_map, 'r') as f:
+        with open(os.path.expanduser(config.label_map), 'r') as f:
             content = f.read().splitlines()
             f.close()
         assert content is not None, 'cannot find label map'
@@ -211,9 +286,15 @@ class DetectionWithProjection:
         for idx in range(0, len(temp), 2):
             item_id = int(temp[idx])
             item_name = temp[idx + 1][1:-1]
-            label_dict[item_name] = item_id
+            label_dict[item_id] = item_name
 
         self.label_map = label_dict
+
+    def get_index_of_class_name(self, class_name):
+        for index, name in self.label_map.items():
+            if name == class_name:
+                return index
+        return -1
 
     def get_box_coordinates(self, box, img_shape):
         txmin = int(box[0] * img_shape[0])
@@ -240,6 +321,236 @@ class DetectionWithProjection:
         z0 = np.mean(depth)
         return z0 / 1000.0  # mm to m
 
+    def add_group_item(self, grid, x, y, gidx):
+        if x < 0 or x >= grid.shape[0] or y < 0 or y >= grid.shape[1]:
+            return False
+        if grid[x, y] != 1:
+            return False
+
+        grid[x, y] = gidx
+        return True
+
+    def propagate_group(self, grid, x, y, gidx):
+        next_steps = [
+            [x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1],
+            [x + 1, y + 1], [x - 1, y - 1], [x - 1, y + 1], [x + 1, y - 1]]
+        for item in next_steps:
+            if self.add_group_item(grid, item[0], item[1], gidx):
+                self.propagate_group(grid, item[0], item[1], gidx)
+
+    def group_rmask(self, rmask, rmask_prob):
+        grid = np.ones_like(rmask)
+        grid[rmask == -2] = 0
+
+        gidx = 2
+        for ri in range(grid.shape[0]):
+            for ci in range(grid.shape[1]):
+                if self.add_group_item(grid, ri, ci, gidx):
+                    self.propagate_group(grid, ri, ci, gidx)
+                    gidx += 1
+
+        group_list = list()
+        for gi in range(2, gidx):
+            this_item = list()
+
+            this_group = np.where(grid == gi)
+            locations = np.dstack(this_group)[0]
+            loc_mean = np.mean(locations, axis=0)
+            this_item.append(loc_mean)
+
+            rotations = rmask[this_group]
+            rot_prob = rmask_prob[this_group]
+
+            positives = rotations > -1
+            rotations = rotations[positives]
+            rot_prob = rot_prob[positives]
+            if len(rotations) > 0:
+                if len(rot_prob) == 1:
+                    final_rotation = rotations[0]
+                else:
+                    final_rotation = np.sum(
+                        rotations * math_utils.softmax(rot_prob))
+            else:
+                final_rotation = -1
+            this_item.append(final_rotation)
+
+            group_list.append(this_item)
+        return group_list
+
+    def publish_spnet(self, sliced_img, identity, actuallyPublish = False):
+        should_publish_spnet = True
+        if rospy.has_param('/deep_pose/publish_spnet'):
+            should_publish_spnet = rospy.get_param('/deep_pose/publish_spnet')
+        if not should_publish_spnet:
+            return [[0.5, 0.5]], [-90]
+
+        spnet_food_name = 'all'
+        if rospy.has_param('/deep_pose/spnet_food_name'):
+            spnet_food_name = rospy.get_param('/deep_pose/spnet_food_name')
+        if spnet_food_name != 'all' and spnet_food_name != identity:
+            return [], []
+
+        invert_spnet_direction = False
+        if rospy.has_param('/deep_pose/invertSPNetDirection'):
+            invert_spnet_direction = rospy.get_param(
+                '/deep_pose/invertSPNetDirection')
+
+        img_org = PILImage.fromarray(sliced_img.copy())
+
+        ratio = float(self.target_size / max(img_org.size))
+        new_size = tuple([int(x * ratio) for x in img_org.size])
+        pads = [(self.target_size - new_size[0]) // 2,
+                (self.target_size - new_size[1]) // 2]
+        img_org = img_org.resize(new_size, PILImage.ANTIALIAS)
+        img = PILImage.new('RGB', (self.target_size, self.target_size))
+        img.paste(img_org, pads)
+        transform = transforms.Compose([transforms.ToTensor()])
+        pred_bmasks, pred_rmasks = self.spnet(
+            torch.stack([transform(img)]).cuda())
+
+        np.set_printoptions(
+            edgeitems=30, linewidth=100000,
+            formatter=dict(float=lambda x: "%.3g" % x))
+
+        img = img.resize((self.final_size, self.final_size),
+                         PILImage.ANTIALIAS)
+        draw = ImageDraw.Draw(img, 'RGBA')
+
+        bmask = pred_bmasks[0].data.cpu().numpy()
+        bmask = math_utils.softmax(bmask)
+        neg_pos = bmask < 0.001
+
+        rmask = pred_rmasks[0].data.cpu().numpy()
+        rmask = math_utils.softmax(rmask, axis=1)
+        neg_rot = np.max(rmask, axis=1) < 0.5
+
+        rmask_prob = np.max(rmask, axis=1)
+        rmask_prob = rmask_prob.reshape(self.mask_size, self.mask_size)
+
+        rmask_argmax = np.argmax(rmask, axis=1) - 1
+
+        rmask = rmask_argmax * 180 / self.angle_res
+
+        if identity in ["celery", "carrot"]:
+            rmask[rmask < 0] = -2 # don't use "no rotation"
+        else:
+            rmask[rmask < 0] = -1 # do use "no rotation"
+        rmask[neg_pos] = -2
+        rmask[neg_rot] = -2
+        rmask = rmask.reshape(self.mask_size, self.mask_size)
+
+        bmask = bmask.reshape(self.mask_size, self.mask_size)
+
+        sp_mode = 'mask'  # group / mask
+        rotation_mode = 'normal'  # normal / alt
+        sp_poses = list()
+        sp_angles = list()
+
+        if sp_mode == 'group':
+            group_list = self.group_rmask(rmask, rmask_prob)
+
+            for item in group_list:
+                ri, ci = item[0]
+                rotation = item[1]
+
+                if rotation_mode == 'alt':
+                    cp = self.mask_size / 2
+                    rotation = -np.degrees(np.arctan2(ri - cp, ci - cp))
+
+                rotation = -rotation
+                ix = ci * self.final_size / self.mask_size
+                iy = ri * self.final_size / self.mask_size
+
+                rot_rad = np.radians(rotation)
+                iw = (-np.sin(rot_rad) * 4 *
+                      (self.final_size / self.target_size))
+                ih = (np.cos(rot_rad) * 4 *
+                      (self.final_size / self.target_size))
+
+                if -rotation == -1:
+                    line_color = (40, 255, 100, 250)
+                else:
+                    line_color = (30, 30, 250, 250)
+
+                draw.line(
+                    (ix - iw, iy - ih, ix + iw, iy + ih),
+                    fill=line_color,
+                    width=int(float(self.final_size) /
+                              float(self.target_size) * 2))
+                sp_poses.append(
+                    [ci / float(self.mask_size),
+                     ri / float(self.mask_size)])
+
+                x1 = iw
+                y1 = ih
+                x2 = 0.5 - ci / float(self.mask_size)
+                y2 = 0.5 - ri / float(self.mask_size)
+                a = x1 * y2 - x2 * y1
+                if invert_spnet_direction:
+                    if a < 0:
+                        rotation += 180
+                else:
+                    if a > 0:
+                        rotation += 180
+                sp_angles.append(rotation)
+
+        else:  # sp_mode = 'mask'
+            done = False
+            for ri in range(self.mask_size):
+                for ci in range(self.mask_size):
+                    rotation = rmask[ri][ci]
+                    if rotation >= -1:
+                        if rotation_mode == 'alt':
+                            cp = self.mask_size / 2
+                            rotation = -np.degrees(
+                                np.arctan2(ri - cp, ci - cp))
+
+                        rotation = -rotation
+                        ix = ci * self.final_size / self.mask_size
+                        iy = ri * self.final_size / self.mask_size
+
+                        rot_rad = np.radians(rotation)
+                        iw = (-np.sin(rot_rad) * 4 *
+                              (self.final_size / self.target_size))
+                        ih = (np.cos(rot_rad) * 4 *
+                              (self.final_size / self.target_size))
+
+                        rot_alpha = int(bmask[ri][ci] * 200) + 55
+                        if -rotation == -1:
+                            line_color = (40, 255, 100, rot_alpha)
+                        else:
+                            line_color = (30, 30, 250, rot_alpha)
+
+                        draw.line(
+                            (ix - iw, iy - ih, ix + iw, iy + ih),
+                            fill=line_color,
+                            width=int(float(self.final_size) /
+                                      float(self.target_size)*2))
+                        sp_poses.append(
+                            [ci / float(self.mask_size),
+                             ri / float(self.mask_size)])
+
+                        x1 = iw
+                        y1 = ih
+                        x2 = 0.5 - ci / float(self.mask_size)
+                        y2 = 0.5 - ri / float(self.mask_size)
+                        a = x1 * y2 - x2 * y1
+                        if invert_spnet_direction:
+                            if a < 0:
+                                rotation += 180
+                        else:
+                            if a > 0:
+                                rotation += 180
+                        sp_angles.append(rotation)
+                        # done = True
+                    if done: break
+                if done: break
+
+        if actuallyPublish:
+            msg_img = self.bridge.cv2_to_imgmsg(np.array(img), "rgb8")
+            self.pub_spnet_img.publish(msg_img)
+        return sp_poses, sp_angles
+
     def detect_objects(self):
         if self.img_msg is None:
             print('no input stream')
@@ -247,10 +558,14 @@ class DetectionWithProjection:
 
         if self.depth_img_msg is None:
             print('no input depth stream')
-            return list()
+            self.depth_img_msg = np.ones(self.img_msg.shape[:2])
 
-        if self.net is None:
-            self.init_retinanet()
+        if self.use_model1:
+            if self.model1 is None:
+                self.init_model1()
+        else:
+            if self.retinanet is None:
+                self.init_retinanet()
 
         if self.use_spnet and self.spnet is None:
             self.init_spnet()
@@ -258,34 +573,68 @@ class DetectionWithProjection:
         if self.label_map is None:
             self.load_label_map()
 
-        img = PILImage.fromarray(self.img_msg.copy())
+        copied_img_msg = self.img_msg.copy()
+        img = PILImage.fromarray(copied_img_msg.copy())
         depth_img = self.depth_img_msg.copy()
-        # depth_img = PILImage.fromarray(depth)
-        w, h = img.size
 
-        x = self.transform(img)
-        x = x.unsqueeze(0)
-        with torch.no_grad():
-            loc_preds, cls_preds = self.net(x.cuda())
+        width, height = img.size
 
-            boxes, labels, scores = self.encoder.decode(
-                loc_preds.cpu().data.squeeze(),
-                cls_preds.cpu().data.squeeze(),
-                (w, h))
+        force_food = False
+        force_food_name = "testberry"
+        if (rospy.has_param('/deep_pose/forceFood') and
+                rospy.has_param('/deep_pose/forceFoodName')):
+            force_food = rospy.get_param('/deep_pose/forceFood')
+            force_food_name = rospy.get_param('/deep_pose/forceFoodName')
 
-        draw = ImageDraw.Draw(img, 'RGBA')
+        if self.use_model1:
+            rmax, cmax = img.size
+            crop_size = 70
+            step_size = 20
 
-        if self.depth_img_msg is not None:
-            # visualize depth
-            depth_pixels = list(depth_img.getdata())
-            depth_pixels = [depth_pixels[i * w:(i + 1) * w] for i in xrange(h)]
-            for x in range(0, img.size[0]):
-                for y in range(0, img.size[1]):
-                    if (depth_pixels[y][x] < 0.001):
-                        draw.point((x,y), fill=(0,0,0))
+            boxes = list()
+            labels = list()
+            scores = list()
+
+            for ri in range(0, rmax - crop_size, step_size):
+                for ci in range(0, cmax - crop_size, step_size):
+                    this_cropped_img = img.crop(
+                        (ri, ci, ri + crop_size, ci + crop_size))
+
+                    x = self.model1_transform(this_cropped_img)
+                    x = x.unsqueeze(0)
+                    with torch.no_grad():
+                        if self.use_cuda:
+                            x = x.cuda()
+                        score = torch.sigmoid(
+                            self.model1(x)).cpu().data.squeeze()
+
+                        if score > 0.55:
+                            boxes.append(
+                                [ri, ci, ri + crop_size, ci + crop_size])
+                            labels.append(-1)
+                            scores.append(score)
+            boxes = torch.Tensor(boxes)
+            labels = torch.Tensor(labels)
+            scores = torch.Tensor(scores)
+
+        else:
+            x = self.retinanet_transform(img)
+            x = x.unsqueeze(0)
+            with torch.no_grad():
+                if self.use_cuda:
+                    loc_preds, cls_preds = self.retinanet(x.cuda())
+                else:
+                    loc_preds, cls_preds = self.retinanet(x)
+
+                boxes, labels, scores = self.encoder.decode(
+                    loc_preds.cpu().data.squeeze(),
+                    cls_preds.cpu().data.squeeze(),
+                    (width, height))
+
+        sp_poses = [[0.5, 0.5]]
+        sp_angles = [-90]
 
         if boxes is None or len(boxes) == 0:
-            # print('no detection')
             msg_img = self.bridge.cv2_to_imgmsg(np.array(img), "rgb8")
             self.pub_img.publish(msg_img)
             return list()
@@ -302,8 +651,6 @@ class DetectionWithProjection:
         cam_fy = camera_matrix[1, 1]
         cam_cx = camera_matrix[0, 2]
         cam_cy = camera_matrix[1, 2]
-        # cam_cx = 320
-        # cam_cy = 240
 
         z0 = (self.camera_to_table /
               (np.cos(np.radians(90 - conf.camera_tilt)) + 1e-10))
@@ -311,59 +658,134 @@ class DetectionWithProjection:
 
         detections = list()
 
+        bbox_offset = 5
+
+        first_food_item = True
+
+        found = False
+        spBoxIdx = -1
+        for _ in range(len(self.selector_food_names)):
+            for box_idx in range(len(boxes)):
+                t_class = labels[box_idx].item()
+                if t_class == -1:
+                    t_class_name = 'sample'
+                else:
+                    t_class_name = self.label_map[t_class]
+
+                if force_food:
+                    t_class_name = force_food_name
+                    t_class = self.get_index_of_class_name(t_class_name)
+
+                if (t_class_name == self.selector_food_names[self.selector_index]):
+                    txmin, tymin, txmax, tymax = boxes[box_idx].numpy() - bbox_offset
+                    if (txmin < 0 or tymin < 0 or txmax > width or tymax > height):
+                        continue
+                    found = True
+                    spBoxIdx = box_idx
+                    cropped_img = copied_img_msg[
+                        int(max(tymin,0)):int(min(tymax, height)),
+                        int(max(txmin,0)):int(min(txmax, width))]
+
+                    if self.use_spnet:
+                        sp_poses, sp_angles = self.publish_spnet(
+                            cropped_img, t_class_name, True)
+                    self.last_class_name = t_class_name
+                    break
+
+            self.selector_index = ((self.selector_index + 1) %
+                                   len(self.selector_food_names))
+            if found:
+                break
+
         for box_idx in range(len(boxes)):
             t_class = labels[box_idx].item()
-            t_class_name = self.label_map[t_class]
+            if t_class == -1:
+                t_class_name = 'sample'
+            else:
+                t_class_name = self.label_map[t_class]
+            if force_food:
+                t_class_name = force_food_name
+                t_class = self.get_index_of_class_name(t_class_name)
 
-            txmin, tymin, txmax, tymax = boxes[box_idx].numpy()
-
-            cropped_depth = depth_img[tymin:tymax, txmin:txmax]
-
-            z0 = self.calculate_depth(cropped_depth)
-            if z0 < 0:
-                print("skipping " + t_class_name + " because depth invalid")
+            txmin, tymin, txmax, tymax = boxes[box_idx].numpy() - bbox_offset
+            if (txmin < 0 or tymin < 0 or txmax > width or tymax > height):
                 continue
 
+            cropped_img = copied_img_msg[
+                int(max(tymin,0)):int(min(tymax, height)),
+                int(max(txmin,0)):int(min(txmax, width))]
+
             if self.use_spnet:
-                cropped_img = img[tymin:tymax, txmin:txmax]
-                pred_position, pred_angle = self.spnet(cropped_img)
-            else:
-                pred_position = np.array([0.5, 0.5])
-                pred_angle = 1.65
+                sp_poses, sp_angles = self.publish_spnet(
+                    cropped_img, t_class_name, False)
 
-            txoff = (txmax - txmin) * pred_position[0]
-            tyoff = (tymax - tymin) * pred_position[1]
-            pt = [txmin + txoff, tymin + tyoff]
+            cropped_depth = depth_img[
+                int(max(tymin,0)):int(min(tymax, height)),
+                int(max(txmin,0)):int(min(txmax, width))]
+            z0 = self.calculate_depth(cropped_depth)
+            if z0 < 0:
+                print("skipping " + t_class_name + " due to invalid z0")
+                continue
 
-            x, y, z, w = retinanet_utils.angles_to_quaternion(
-                pred_angle, 0., 0.)
-            rvec = np.array([x, y, z, w])
+            if spBoxIdx >= 0:
+                for sp_idx in range(len(sp_poses)):
+                    box_key = '{}_{}_{}_{}'.format(
+                        t_class_name, int(txmin), int(tymin), sp_idx)
+                    this_pos = sp_poses[sp_idx]
+                    this_ang = sp_angles[sp_idx]
 
-            # y0 = (z0 / cam_fy) * (pt[1] - cam_cy)
-            # tan_alpha = -y0 / z0
-            tz = z0  # - (y0 / (tan_theta - tan_alpha))
-            tx = (tz / cam_fx) * (pt[0] - cam_cx)
-            ty = (tz / cam_fy) * (pt[1] - cam_cy)
-            tvec = np.array([tx, ty, tz])
+                    txoff = (txmax - txmin) * this_pos[0]
+                    tyoff = (tymax - tymin) * this_pos[1]
+                    pt = [txmin + txoff, tymin + tyoff]
 
-            rst_vecs = [rvec, tvec, t_class_name, t_class]
-            detections.append(rst_vecs)
+                    coff = 60
+                    cropped_depth = depth_img[
+                        int(pt[1]-coff):int(pt[1]+coff),
+                        int(pt[0]-coff):int(pt[1]+coff)]
+                    current_z0 = self.calculate_depth(cropped_depth)
+                    if (current_z0 < 0):
+                        current_z0 = z0
+
+                    x, y, z, w = math_utils.angles_to_quaternion(
+                        this_ang + 90, 0., 0.)
+                    rvec = np.array([x, y, z, w])
+
+                    tz = current_z0
+                    tx = (tz / cam_fx) * (pt[0] - cam_cx)
+                    ty = (tz / cam_fy) * (pt[1] - cam_cy)
+                    tvec = np.array([tx, ty, tz])
+
+                    rst_vecs = [rvec, tvec,
+                                t_class_name, t_class,
+                                box_key, sp_idx]
+                    detections.append(rst_vecs)
 
         # visualize detections
-        fnt = ImageFont.truetype('Pillow/Tests/fonts/DejaVuSans.ttf', 11)
+        fnt = ImageFont.truetype('Pillow/Tests/fonts/DejaVuSans.ttf', 12)
+
         for idx in range(len(boxes)):
-            box = boxes[idx]
+            box = boxes[idx].numpy() - bbox_offset
             label = labels[idx]
-            draw.rectangle(list(box), outline=(255, 0, 0, 200))
+            food_name = self.label_map[label.item()]
+            if force_food:
+                food_name = force_food_name
+
+            draw.rectangle(box, outline=(255, 0, 0, 200))
+            box1 = box + 1
+            box1[:2] -= 2
+            draw.rectangle(box1, outline=(255, 0, 0, 200))
+            box2 = box + 2
+            box2[:2] -= 4
+            draw.rectangle(box2, outline=(255, 0, 0, 200))
 
             item_tag = '{0}: {1:.2f}'.format(
-                self.label_map[label.item()],
+                food_name,
                 scores[idx])
             iw, ih = fnt.getsize(item_tag)
-            ix, iy = list(box[:2])
+            ix, iy = box[:2]
             draw.rectangle((ix, iy, ix + iw, iy + ih), fill=(255, 0, 0, 100))
             draw.text(
-                list(box[:2]),
+                box[:2],
                 item_tag,
                 font=fnt, fill=(255, 255, 255, 255))
 
@@ -380,25 +802,44 @@ def print_usage(err_msg):
 
 
 def run_detection():
-    rospy.init_node(conf.node_title)
+    global config
+    config = load_configs()
+    if config is None:
+        return
+
+    if config.use_cuda == 'true':
+        os.environ['CUDA_VISIBLE_DEVICES'] = config.gpus
+
+    rospy.init_node(config.node_title)
     rcnn_projection = DetectionWithProjection(
-        title=conf.node_title,
-        use_spnet=False)
+        title=config.node_title,
+        use_cuda=(config.use_cuda == 'true'),
+        use_spnet=False,
+        use_model1=False)
 
     try:
         pub_pose = rospy.Publisher(
-                '{}/marker_array'.format(conf.node_title),
-                MarkerArray,
-                queue_size=1)
+            '{}/marker_array'.format(config.node_title),
+            MarkerArray,
+            queue_size=1)
 
-        rate = rospy.Rate(conf.frequency)  # 1 hz
+        rate = rospy.Rate(config.frequency)
 
         while not rospy.is_shutdown():
             update_timestamp_str = 'update: {}'.format(rospy.get_time())
             rst = rcnn_projection.detect_objects()
 
-            item_dict = dict()
             poses = list()
+            pose = Marker()
+            pose.header.frame_id = config.camera_tf
+            pose.header.stamp = rospy.Time.now()
+            pose.id = 0
+            pose.ns = 'food_item'
+            pose.type = Marker.CUBE
+            pose.action = Marker.DELETEALL
+            poses.append(pose)
+
+            item_dict = dict()
             if rst is not None:
                 for item in rst:
                     if item[2] in item_dict:
@@ -407,13 +848,15 @@ def run_detection():
                         item_dict[item[2]] = 1
 
                     obj_info = dict()
-                    obj_info['id'] = '{}_{}'.format(item[2], item_dict[item[2]])
+                    obj_info['id'] = '{}_{}'.format(
+                        item[2], item_dict[item[2]])
+                    obj_info['box_key'] = item[3] * 1000 + item[5]
 
                     pose = Marker()
                     pose.header.frame_id = conf.camera_tf
                     pose.header.stamp = rospy.Time.now()
-                    pose.id = item[3]
-                    pose.ns = conf.marker_ns
+                    pose.id = item[3] * 1000 + item[5]
+                    pose.ns = 'food_item'
                     pose.text = json.dumps(obj_info)
                     pose.type = Marker.CYLINDER
                     pose.pose.position.x = item[1][0]
@@ -423,8 +866,8 @@ def run_detection():
                     pose.pose.orientation.y = item[0][1]
                     pose.pose.orientation.z = item[0][2]
                     pose.pose.orientation.w = item[0][3]
-                    pose.scale.x = 0.04
-                    pose.scale.y = 0.04
+                    pose.scale.x = 0.01
+                    pose.scale.y = 0.01
                     pose.scale.z = 0.04
                     pose.color.a = 0.5
                     pose.color.r = 1.0
@@ -434,8 +877,6 @@ def run_detection():
                     poses.append(pose)
 
             pub_pose.publish(poses)
-
-            #rospy.loginfo(update_timestamp_str)
             rate.sleep()
 
     except rospy.ROSInterruptException:
