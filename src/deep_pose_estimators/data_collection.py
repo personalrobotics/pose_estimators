@@ -118,12 +118,10 @@ class DataCollection:
         if self.depth_img_msg is None:
             print('no input depth stream')
             self.depth_img_msg = np.ones(self.img_msg.shape[:2])
-            # return list()
 
         copied_img_msg = self.img_msg.copy()
         img = PILImage.fromarray(copied_img_msg.copy())
         depth_img = self.depth_img_msg.copy()
-        # depth_img = PILImage.fromarray(depth)
         width, height = img.size
 
 
@@ -264,7 +262,7 @@ def run_detection():
                 MarkerArray,
                 queue_size=1)
 
-        rate = rospy.Rate(config.frequency)  # 1 hz
+        rate = rospy.Rate(config.frequency)
 
         while not rospy.is_shutdown():
             update_timestamp_str = 'update: {}'.format(rospy.get_time())
@@ -318,8 +316,6 @@ def run_detection():
                     poses.append(pose)
 
             pub_pose.publish(poses)
-
-            #rospy.loginfo(update_timestamp_str)
             rate.sleep()
 
     except rospy.ROSInterruptException:

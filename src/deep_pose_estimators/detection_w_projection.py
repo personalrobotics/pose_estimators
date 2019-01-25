@@ -9,6 +9,7 @@ import os
 import sys
 import json
 import cv2
+import pcl
 import rospy
 import rospkg
 try:
@@ -21,13 +22,13 @@ import torchvision.transforms as transforms
 
 from PIL import Image as PILImage
 from PIL import ImageDraw, ImageFont
-
 from visualization_msgs.msg import Marker, MarkerArray
 from sensor_msgs.msg import CompressedImage, Image, CameraInfo
-
+import sensor_msgs.point_cloud2 as pc2
 from cv_bridge import CvBridge
 
 from utils import math_utils
+from utils import pcl_utils
 
 rospack = rospkg.RosPack()
 pkg_base = rospack.get_path('deep_pose_estimators')
@@ -42,9 +43,6 @@ from bite_selection_package.model.spnet import SPNet, DenseSPNet
 from bite_selection_package.spnet_config import config as spnet_config
 
 from laura_model1.run_test import Model1
-
-
-config = None  # configurations saved in a json file (e.g. config/ada.json)
 
 
 # An application for the food manipulation project
@@ -67,6 +65,9 @@ class DetectionWithProjection:
 
         self.use_cuda = use_cuda
 
+        self.agg_pc_data = list()
+        self.camera_to_table = conf.camera_to_table
+
         self.use_spnet = use_spnet
         self.spnet = None
         self.spnet_transform = None
@@ -86,6 +87,7 @@ class DetectionWithProjection:
         self.camera_tilt = 1e-5
 
         self.init_ros_subscribers()
+        self.init_ros_publishers()
 
         self.pub_img = rospy.Publisher(
             '{}/detection_image'.format(self.title),
@@ -99,6 +101,7 @@ class DetectionWithProjection:
             '{}/spnet_image'.format(self.title),
             Image,
             queue_size=2)
+
         self.bridge = CvBridge()
 
         self.selector_food_names = [
@@ -107,27 +110,47 @@ class DetectionWithProjection:
 
     def init_ros_subscribers(self):
         # subscribe image topic
-        if config.msg_type == 'compressed':
-            self.subscriber = rospy.Subscriber(
-                config.image_topic, CompressedImage,
+        if conf.msg_type == 'compressed':
+            self.img_subscriber = rospy.Subscriber(
+                conf.image_topic, CompressedImage,
                 self.sensor_compressed_image_callback, queue_size=1)
         else:  # raw
-            self.subscriber = rospy.Subscriber(
-                config.image_topic, Image,
+            self.img_subscriber = rospy.Subscriber(
+                conf.image_topic, Image,
                 self.sensor_image_callback, queue_size=1)
-        print('subscribed to {}'.format(config.image_topic))
+        print('subscribed to {}'.format(conf.image_topic))
 
-        # subscribe depth topic, only raw for now
-        self.subscriber = rospy.Subscriber(
-            config.depth_image_topic, Image,
-            self.sensor_depth_callback, queue_size=1)
-        print('subscribed to {}'.format(config.depth_image_topic))
+        if (conf.depth_image_topic is not None and
+                len(conf.depth_image_topic) > 0):
+            # subscribe depth topic, only raw for now
+            self.depth_subscriber = rospy.Subscriber(
+                conf.depth_image_topic, Image,
+                self.sensor_depth_callback, queue_size=1)
+            print('subscribed to {}'.format(conf.depth_image_topic))
+
+        if (conf.pointcloud_topic is not None and
+                len(conf.pointcloud_topic) > 0):
+            self.pointcloud_subscriber = rospy.Subscriber(
+                conf.pointcloud_topic, pc2.PointCloud2,
+                self.lidar_scan_callback, queue_size=10)
+            print('subscribed to {}'.format(conf.pointcloud_topic))
 
         # subscribe camera info topic
         self.subscriber = rospy.Subscriber(
-                config.camera_info_topic, CameraInfo,
+                conf.camera_info_topic, CameraInfo,
                 self.camera_info_callback)
-        print('subscribed to {}'.format(config.camera_info_topic))
+        print('subscribed to {}'.format(conf.camera_info_topic))
+
+    def init_ros_publishers(self):
+        self.pub_img = rospy.Publisher(
+            '{}/detection_image'.format(self.title),
+            Image,
+            queue_size=2)
+
+        self.pub_table = rospy.Publisher(
+            '{}/table_point_cloud2'.format(self.title),
+            pc2.PointCloud2,
+            queue_size=2)
 
     def sensor_compressed_image_callback(self, ros_data):
         np_arr = np.fromstring(ros_data.data, np.uint8)
@@ -142,6 +165,38 @@ class DetectionWithProjection:
 
     def camera_info_callback(self, ros_data):
         self.camera_info = ros_data
+
+    def lidar_scan_callback(self, ros_data):
+        this_plist = list()
+        for data in pc2.read_points(ros_data, skip_nans=True):
+            if (data[0] > -0.75 and data[0] < 0.75 and
+                    data[1] > -0.05 and data[1] < 0.5 and
+                    data[2] > 0.45 and data[2] < 1.1):
+                    # data[3] > 2500 and data[3] < 4000):
+                this_plist.append([data[0], data[1], data[2], data[3]])
+
+        self.agg_pc_data.append(this_plist)
+        if len(self.agg_pc_data) > max_len:
+            del self.agg_pc_data[0]
+
+            merged_list = self.agg_pc_data[0]
+            for idx in range(1, len(self.agg_pc_data)):
+                merged_list.extend(self.agg_pc_data[idx])
+            pcl_cloud = pcl.PointCloud_PointXYZRGB()
+            pcl_cloud.from_list(merged_list)
+
+            seg = pcl_cloud.make_segmenter()
+            seg.set_optimize_coefficients(True)
+            seg.set_model_type(pcl.SACMODEL_PLANE)
+            seg.set_method_type(pcl.SAC_RANSAC)
+            seg.set_distance_threshold(0.01)
+            indices, model = seg.segment()
+
+            self.camera_to_table = model[3]  # ax + by + cz + d = 0
+
+            table_cloud = pcl_cloud.extract(indices)
+            new_ros_msg = pcl_utils.pcl_to_ros(table_cloud)
+            self.pub_table.publish(new_ros_msg)
 
     def init_retinanet(self):
         self.retinanet = RetinaNet()
@@ -521,6 +576,7 @@ class DetectionWithProjection:
         copied_img_msg = self.img_msg.copy()
         img = PILImage.fromarray(copied_img_msg.copy())
         depth_img = self.depth_img_msg.copy()
+
         width, height = img.size
 
         force_food = False
@@ -596,11 +652,9 @@ class DetectionWithProjection:
         cam_cx = camera_matrix[0, 2]
         cam_cy = camera_matrix[1, 2]
 
-        rvec = np.array([0.0, 0.0, 0.0])
-
-        # z0 = (config.camera_to_table /
-        #       (np.cos(np.radians(90 - self.camera_tilt)) + 0.1 ** 10))
-        z0 = config.camera_to_table
+        z0 = (self.camera_to_table /
+              (np.cos(np.radians(90 - conf.camera_tilt)) + 1e-10))
+        # z0 = self.camera_to_table
 
         detections = list()
 
@@ -708,6 +762,7 @@ class DetectionWithProjection:
 
         # visualize detections
         fnt = ImageFont.truetype('Pillow/Tests/fonts/DejaVuSans.ttf', 12)
+
         for idx in range(len(boxes)):
             box = boxes[idx].numpy() - bbox_offset
             label = labels[idx]
@@ -743,38 +798,7 @@ class DetectionWithProjection:
 def print_usage(err_msg):
     print(err_msg)
     print('Usage:')
-    print('\t./detection_w_projection.py <config_filename (e.g. ada.json)>\n')
-
-
-def load_configs():
-    args = sys.argv
-
-    config_filename = None
-    if len(args) == 2:
-        config_filename = args[1]
-    else:
-        ros_param_name = '/pose_estimator/config_filename'
-        if rospy.has_param(ros_param_name):
-            config_filename = rospy.get_param(ros_param_name)
-
-    if config_filename is None:
-        print_usage('Invalid arguments')
-        return None
-
-    config_filepath = os.path.join(
-        pkg_base, 'src/deep_pose_estimators/config', config_filename)
-    print('config with: {}'.format(config_filepath))
-
-    try:
-        with open(config_filepath, 'r') as f:
-            import simplejson
-            from easydict import EasyDict
-            config = EasyDict(simplejson.loads(f.read()))
-            return config
-    except EnvironmentError:
-        print_usage('Cannot find config file')
-
-    return None
+    print('\t./detection_w_projection.py <config_filename (e.g. herb)>\n')
 
 
 def run_detection():
@@ -829,12 +853,12 @@ def run_detection():
                     obj_info['box_key'] = item[3] * 1000 + item[5]
 
                     pose = Marker()
-                    pose.header.frame_id = config.camera_tf
+                    pose.header.frame_id = conf.camera_tf
                     pose.header.stamp = rospy.Time.now()
                     pose.id = item[3] * 1000 + item[5]
                     pose.ns = 'food_item'
                     pose.text = json.dumps(obj_info)
-                    pose.type = Marker.CUBE
+                    pose.type = Marker.CYLINDER
                     pose.pose.position.x = item[1][0]
                     pose.pose.position.y = item[1][1]
                     pose.pose.position.z = item[1][2]
@@ -860,4 +884,28 @@ def run_detection():
 
 
 if __name__ == '__main__':
+    args = sys.argv
+
+    config_filename = None
+    if len(args) == 2:
+        config_filename = args[1]
+    else:
+        ros_param_name = '/pose_estimator/config_filename'
+        if rospy.has_param(ros_param_name):
+            config_filename = rospy.get_param(ros_param_name)
+
+    if config_filename is None:
+        print_usage('Invalid arguments')
+        exit(0)
+
+    if config_filename.startswith('ada'):
+        from robot_conf import ada as conf
+    elif config_filename.startswith('herb'):
+        from robot_conf import herb as conf
+    else:
+        print_usage('Invalid arguments')
+        exit(0)
+
+    os.environ['CUDA_VISIBLE_DEVICES'] = conf.gpus
+
     run_detection()

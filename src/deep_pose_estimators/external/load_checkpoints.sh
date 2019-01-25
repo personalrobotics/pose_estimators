@@ -12,5 +12,3 @@ else
   scp -r prl@mthrbrn.personalrobotics.cs.washington.edu:/mnt/hard_data/GitHub/pytorch-retinanet-foods/pretrained ./pytorch_retinanet/
 fi
 
-
-
