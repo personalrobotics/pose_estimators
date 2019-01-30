@@ -22,7 +22,7 @@ class TestMarkerManager:
         self._marker_list = list()
         self._default_offset = 5000
 
-    def add_object(obj_id, obj_key, x, y, z,
+    def add_object(self, obj_id, obj_key, x, y, z,
                    qx=0, qy=0, qz=0, qw=1,
                    marker_type=Marker.CUBE):
         info_dict = {
@@ -54,7 +54,7 @@ class TestMarkerManager:
 
         self._marker_list.append(marker)
 
-    def get_objects():
+    def get_objects(self):
         for m in self._marker_list:
             m.header.stamp = rospy.Time.now()
         return self._marker_list
