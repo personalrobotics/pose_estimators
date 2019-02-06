@@ -12,10 +12,6 @@ import cv2
 import pcl
 import rospy
 import rospkg
-try:
-    import cPickle as pickle
-except ImportError:
-    import pickle
 
 import torch
 import torchvision.transforms as transforms
@@ -46,13 +42,8 @@ from laura_model1.run_test import Model1
 
 
 # An application for the food manipulation project
-class DetectionWithProjection:
-    class Model:
-        def __init__(self, point3f_list, descriptors):
-            self.point3f_list = point3f_list
-            self.descriptors = descriptors
-
-    def __init__(self, title='DetectionWithProjection',
+class FoodDetection:
+    def __init__(self, title='FoodDetection',
                  use_spnet=True, use_cuda=True, use_model1=False):
         self.title = title
 
@@ -811,7 +802,7 @@ def run_detection():
         os.environ['CUDA_VISIBLE_DEVICES'] = config.gpus
 
     rospy.init_node(config.node_title)
-    rcnn_projection = DetectionWithProjection(
+    rcnn_projection = FoodDetection(
         title=config.node_title,
         use_cuda=(config.use_cuda == 'true'),
         use_spnet=False,
@@ -848,9 +839,8 @@ def run_detection():
                         item_dict[item[2]] = 1
 
                     obj_info = dict()
-                    obj_info['id'] = '{}_{}'.format(
+                    obj_info['uid'] = '{}_{}'.format(
                         item[2], item_dict[item[2]])
-                    obj_info['box_key'] = item[3] * 1000 + item[5]
 
                     pose = Marker()
                     pose.header.frame_id = conf.camera_tf

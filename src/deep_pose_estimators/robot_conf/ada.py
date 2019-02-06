@@ -1,6 +1,11 @@
 ''' configurations for ada '''
 
+from ada_food_manipulation import FoodDetection
+
+estimator = FoodDetection
+
 gpus = '0'
+use_cuda = True
 
 image_topic = '/camera/color/image_raw/compressed'
 msg_type = 'compressed'

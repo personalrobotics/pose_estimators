@@ -7,7 +7,7 @@ catkin_python_setup()
 
 install(
     PROGRAMS
-        rcnn_projection.py
+        perception_frontend.py
     DESTINATION
         "${CATKIN_PACKAGE_BIN_DESTINATION}"
 )
