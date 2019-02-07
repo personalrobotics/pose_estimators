@@ -46,7 +46,7 @@ For `run_sim_perception_module.py`, you need to publish a static transform, e.g.
 rosrun tf static_transform_publisher 0.0 0.0 0.0 0.0 0.0 0.0 1.0 camera_color_optical_frame map 1000
 ```
 
-3 Run a simulated detection script
+3. Run a simulated detection script
 ```
 python run_sim_perception_module.py
 ```
