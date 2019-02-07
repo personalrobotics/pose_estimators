@@ -5,20 +5,20 @@ Deep Pose Estimators is a ROS wrapper for python-based pose detectors to publish
 Deep Pose Estimators is composed of four modules and a few convenience methods.
 
 ### PoseEstimator
-`PoseEstimator` is an abstract class for detection in camera frame. Each application is expected to inherit PoseEstimator and implement `detect_objects` method. For example, one can create a CNNPoseEstimator which uses a trained CNN-based estimator to  detect and classify objects from image streams. Typically a pose estimator subscribes to camera image/depth topics and perform the detection when `detect_objects` is called. `detect_objects` returns _all_ detected items in the image, in the form of list of `DetectedItem`. It can optionally publish a marker topic which contains pose and any other auxiliary information (e.g. object class).
+`PoseEstimator` is an abstract class for detection in camera frame. Each application is expected to inherit PoseEstimator and implement `detect_objects` method. For example, one can create a CNNPoseEstimator which uses a trained CNN-based estimator to  detect and classify objects from image streams. Typically a pose estimator subscribes to camera image/depth topics and perform the detection when `detect_objects` is called. `detect_objects` returns _all_ detected items in the image, as a list of `DetectedItem`. It can optionally publish a marker topic which contains pose and any other auxiliary information (e.g. object class).
 
 ### DetectedItem
 `DetectedItem` represents an item detected by a pose estimator. It stores sensor_frame_id, uid, pose, and additional information of an object as a dictionary. It can also convert a ROS `Marker` into a `DetectedItem`, which may be useful for extracting information from pose estimators that communicate only via ROS.
 
 ### PerceptionModule
-`PerceptionModule` is a wrapper for ROS communication with aikido's `PoseEstimatorModule`. It mainly converts detected items' poses from the detection frame to the destination frame. It publishes the transforms object information as ROS `Marker` by using `MarkerManager`.
+`PerceptionModule` is a wrapper for ROS communication with aikido's `PoseEstimatorModule`. It mainly converts detected items' poses from the detection frame to the destination frame. It creates ROS markers for the transformed items by using `MarkerManager`.
 
-Many pose estimators currently in use are one-time detectors with no tracking option. For these estimators, `PerceptionModule` supports `purge_all_markers_per_update` option. If true, per every call to it creates a marker with `Marker.DELETEALL` (which is an indicator that all previous markers are to be removed) and prepends it to the list of currently detected markers.
+Many pose estimators currently in use are one-time detectors with no tracking. For these estimators, `PerceptionModule` supports `purge_all_markers_per_update` option. If true, per every call to `get_detected_objects_as_markers` it creates a marker with `Marker.DELETEALL` (which is an indicator that all previous markers are to be removed) and prepends it to the list of currently detected markers.
 
 ### MarkerManager
 `MarkerManager` has two main roles. It converts `DetectedItem` to a ROS `Marker` and fills up additional information such as Marker's type, scale, etc. In addition, it optionally supports `count_item`, which is used to provide a unique id to the detected object.
 
-`PerceptionModule` uses this marker manager as a convenient way to populate markers with particular type, scale, color, or any other auxiliary information.
+`PerceptionModule` uses this marker manager to provide unique id to the objects and to populate markers with particular type, scale, color, or any other auxiliary information.
 
 
 ### run_perception_module
