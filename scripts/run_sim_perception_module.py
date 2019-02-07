@@ -4,6 +4,8 @@ from deep_pose_estimators.pose_estimators import SimPoseEstimator
 from deep_pose_estimators.perception_module import PerceptionModule
 from deep_pose_estimators.marker_manager import MarkerManager
 from deep_pose_estimators.run_perception_module import run_detection
+from visualization_msgs.msg import Marker
+
 import rospy
 
 # Run in command line a static transform between the detection frame to destination frame, e.g.
@@ -16,7 +18,7 @@ if __name__ == "__main__":
     rospy.init_node("sim_perception")
 
     pose_estimator = SimPoseEstimator(detection_frame)
-    marker_manager = MarkerManager()
+    marker_manager = MarkerManager(action=Marker.DELETEALL) # Example of auxiliary info
 
     perception_module = PerceptionModule(
         pose_estimator=pose_estimator,

@@ -23,6 +23,7 @@ class MarkerManager(object):
                  marker_type=Marker.CUBE,
                  scale=[0.01, 0.01, 0.01],
                  color=[0.5, 1.0, 0.5, 0.1],
+                 **kwargs,
                  count_items=True):
         """
         @param count_items: if True, MarkerManager is in charge of counting the items.
@@ -31,6 +32,7 @@ class MarkerManager(object):
         self.marker_type = marker_type
         self.scale = scale
         self.color = color
+        self.kwargs = kwargs
         self.count_items = count_items
 
         self.clear()
@@ -70,5 +72,9 @@ class MarkerManager(object):
         marker.color.g = self.color[2]
         marker.color.b = self.color[3]
         marker.lifetime = rospy.Duration(0)
+
+        for key in self.kwargs:
+            if hasattr(marker, key):
+                setattr(marker, key, self.kwargs[key])
 
         return marker

@@ -1,7 +1,7 @@
 import numpy
 import rospy
 from visualization_msgs.msg import Marker
-from tf.transformations import quaternion_matrix, quaternion_from_matrix
+from tf.transformations import quaternion_matrix
 
 
 class DetectedItem(object):
