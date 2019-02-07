@@ -66,6 +66,8 @@ class PerceptionModule(object):
         @retun A list of DetectedItems
         """
 
+        self.marker_manager.clear()
+
         if self.pose_estimator is None:
             marker_message = rospy.wait_for_message(self.marker_topic,
                                                     MarkerArray,
