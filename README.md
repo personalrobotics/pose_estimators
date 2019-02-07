@@ -1,5 +1,5 @@
 # deep_pose_estimators
-Perception modules with CNN based approaches for HERB
+Perception modules with CNN based approaches for robots
 
 
 ## Running a detection script on a robot
