@@ -1,8 +1,9 @@
 import rospy
-from visualization_msgs.msg import Marker
-import tf
 import json
 import collections
+
+from visualization_msgs.msg import Marker
+from tf.transformations import quaternion_matrix
 
 from deep_pose_estimators.detected_item import DetectedItem
 
@@ -53,7 +54,7 @@ class MarkerManager(object):
             marker.id = self.item_counter[item.marker_namespace]
 
         # Get the pose
-        quaternion = tf.transformations.quaternion_from_matrix(item.pose)
+        quaternion = quaternion_from_matrix(item.pose)
         marker.pose.position.x = item.pose[0,3]
         marker.pose.position.y = item.pose[1,3]
         marker.pose.position.z = item.pose[2,3]

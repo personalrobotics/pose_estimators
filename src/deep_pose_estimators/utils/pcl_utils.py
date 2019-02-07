@@ -5,9 +5,6 @@ import struct
 import pcl
 import sensor_msgs.point_cloud2 as pc2
 
-sys.path.append('../')
-from robot_conf import herb as conf
-
 
 def ros_to_pcl(ros_cloud):
     """ Converts a ROS PointCloud2 message to a pcl PointXYZRGB
@@ -29,7 +26,7 @@ def ros_to_pcl(ros_cloud):
     return pcl_data
 
 
-def pcl_to_ros(pcl_array):
+def pcl_to_ros(pcl_array, conf):
     """ Converts a ROS PointCloud2 message to a pcl PointXYZRGB
 
         Args:
@@ -47,21 +44,21 @@ def pcl_to_ros(pcl_array):
     ros_msg.width = pcl_array.size
 
     ros_msg.fields.append(pc2.PointField(
-                            name="x",
-                            offset=0,
-                            datatype=pc2.PointField.FLOAT32, count=1))
+        name="x",
+        offset=0,
+        datatype=pc2.PointField.FLOAT32, count=1))
     ros_msg.fields.append(pc2.PointField(
-                            name="y",
-                            offset=4,
-                            datatype=pc2.PointField.FLOAT32, count=1))
+        name="y",
+        offset=4,
+        datatype=pc2.PointField.FLOAT32, count=1))
     ros_msg.fields.append(pc2.PointField(
-                            name="z",
-                            offset=8,
-                            datatype=pc2.PointField.FLOAT32, count=1))
+        name="z",
+        offset=8,
+        datatype=pc2.PointField.FLOAT32, count=1))
     ros_msg.fields.append(pc2.PointField(
-                            name="rgb",
-                            offset=16,
-                            datatype=pc2.PointField.FLOAT32, count=1))
+        name="rgb",
+        offset=16,
+        datatype=pc2.PointField.FLOAT32, count=1))
 
     ros_msg.is_bigendian = False
     ros_msg.point_step = 32
