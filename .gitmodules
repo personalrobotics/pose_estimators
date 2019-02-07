@@ -1,7 +1,3 @@
-[submodule "src/deep_pose_estimators/external/bite_selection_package"]
-  path = src/deep_pose_estimators/external/bite_selection_package
-  url = https://github.com/personalrobotics/bite_selection_package.git
-  branch = ada
 [submodule "src/deep_pose_estimators/external/pytorch_retinanet"]
 	path = src/deep_pose_estimators/external/pytorch_retinanet
   url = https://github.com/personalrobotics/pytorch_retinanet.git
