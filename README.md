@@ -56,6 +56,5 @@ rostopic echo /simulated_pose/marker_array
 ```
 
 ## How to build a specific demo
-Please check an example demo for detecting food for ADA: https://github.com/personalrobotics/food_detector
-Please check an example demo for detecting cans on HERB: https://github.com/personalrobotics/can_detector
+Please check an example demo for [food_detector](https://github.com/personalrobotics/food_detector) or [can_detector](https://github.com/personalrobotics/can_detector).
 
