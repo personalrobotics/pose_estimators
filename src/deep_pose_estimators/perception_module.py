@@ -7,6 +7,7 @@ from tf import TransformListener
 import rospy
 import numpy
 
+
 class PerceptionException(Exception):
     pass
 
@@ -28,7 +29,8 @@ class PerceptionModule(object):
                  detection_frame,
                  destination_frame='map',
                  detection_frame_marker_topic=None,
-                 timeout=1.0):
+                 timeout=1.0,
+                 purge_all_markers_per_update=True):
         """
         This initializes a Perception module.
 
@@ -40,6 +42,8 @@ class PerceptionModule(object):
         @param detection_frame_marker_topic The ROS topic to read markers from. Typically the output topic for detectors.
                                             If this is provided, PerceptionModule will subscribe to this topic.
         @param timeout Timeout for detector or tf listener
+        @param purge_all_markers_per_update If True, add a delete-all marker as part of the update so that
+        all previous markers get deleted
         """
 
         # Only one of these should be provided
@@ -56,6 +60,7 @@ class PerceptionModule(object):
 
         self.listener = TransformListener()
         self.timeout = timeout
+        self.purge_all_markers_per_update
 
     def __str__(self):
         return self.__class__.__name__
@@ -66,10 +71,23 @@ class PerceptionModule(object):
         @retun A list of DetectedItems
         """
 
+        markers = []
+        if self.purge_all_markers_per_update:
+            self.marker_manager.clear()
+
+            # A marker responsible for deleting all previous markers
+            purge_marker = Marker()
+            purge_marker.header.frame_id = self.destination_frame
+            purge_marker.header.stamp = rospy.Time.now()
+            purge_marker.id = 0
+            purge_marker.ns = 'item'
+            purge_marker.type = Marker.CUBE
+            purge_marker.action = Marker.DELETEALL
+            markers.append(purge_marker)
+
         if self.pose_estimator is None:
-            marker_message = rospy.wait_for_message(self.marker_topic,
-                                                    MarkerArray,
-                                                    timeout=self.timeout)
+            marker_message = rospy.wait_for_message(
+                self.marker_topic, MarkerArray, timeout=self.timeout)
 
             items = [DetectedItem.from_marker(marker) for
                                         marker in marker_message.markers]
@@ -91,8 +109,6 @@ class PerceptionModule(object):
         frame_offset[0,3] = frame_trans[0]
         frame_offset[1,3] = frame_trans[1]
         frame_offset[2,3] = frame_trans[2]
-
-        markers = []
 
         # Convert items to be in desination frame
         for item in items:
