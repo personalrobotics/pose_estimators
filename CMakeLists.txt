@@ -4,10 +4,3 @@ project(deep_pose_estimators)
 find_package(catkin REQUIRED)
 catkin_package()
 catkin_python_setup()
-
-# install(
-#     PROGRAMS
-#         perception_frontend.py
-#     DESTINATION
-#         "${CATKIN_PACKAGE_BIN_DESTINATION}"
-# )
