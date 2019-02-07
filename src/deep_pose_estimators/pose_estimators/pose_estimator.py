@@ -1,5 +1,6 @@
 import abc
 
+
 class PoseEstimator(object):
     """
     PoseEstimator is an abstract class for detection in camera frame.

@@ -1,32 +1,54 @@
 import rospy
 from visualization_msgs.msg import Marker
 import tf
+import json
+import collections
 
 from deep_pose_estimators.detected_item import DetectedItem
 
 
+# TODO: When count_items is true, Markermanager is in charge of putting id to the markers.
+# Currently, no postprocessing is done to assign the same id to the same object in
+# consecutive frames.
+# clear() must be called at every frame to reset the counter.
 class MarkerManager(object):
     """
     Converts DetectedItem to a marker. Fills up basic information for marker
     in addition to what DetectedItem provides.
     PerceptionModule may optionally use this marker manager as a convenient way
     to populate markers with particular type, scale, and color.
+
     """
     def __init__(self,
                  marker_type=Marker.CUBE,
                  scale=[0.01, 0.01, 0.01],
-                 color=[0.5, 1.0, 0.5, 0.1]):
+                 color=[0.5, 1.0, 0.5, 0.1],
+                 count_items=True):
+        """
+        @param count_items: if True, MarkerManager is in charge of counting the items.
+
+        """
         self.marker_type = marker_type
         self.scale = scale
         self.color = color
+        self.count_items = count_items
+
+        self.clear()
+
+    def clear(self):
+        if self.count_items:
+            self.item_counter = collections.defaultdict(int)
 
     def item_to_marker(self, item):
         marker = Marker()
         marker.header.frame_id = item.frame_id
         marker.header.stamp = rospy.Time.now()
         marker.ns = item.marker_namespace
-        marker.id = item.marker_id
-        marker.text = str(item.info_map)
+        marker.text = json.dumps(item.info_map)
+
+        if self.count_items:
+            self.item_counter[item.marker_namespace] += 1
+            marker.id = self.item_counter[item.marker_namespace]
 
         # Get the pose
         quaternion = tf.transformations.quaternion_from_matrix(item.pose)
