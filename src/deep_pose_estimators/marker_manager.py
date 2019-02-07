@@ -1,36 +1,44 @@
 import rospy
 from visualization_msgs.msg import Marker
+import tf
 
-from detected_item import DetectedItem
+from deep_pose_estimators.detected_item import DetectedItem
 
 
-class MarkerManager:
-    def __init__(self, title, frame_id,
+class MarkerManager(object):
+    """
+    Converts DetectedItem to a marker. Fills up basic information for marker
+    in addition to what DetectedItem provides.
+    PerceptionModule may optionally use this marker manager as a convenient way
+    to populate markers with particular type, scale, and color.
+    """
+    def __init__(self,
                  marker_type=Marker.CUBE,
                  scale=[0.01, 0.01, 0.01],
                  color=[0.5, 1.0, 0.5, 0.1]):
-        self.marker_list = list()
-
-        self.title = title
-        self.frame_id = frame_id
         self.marker_type = marker_type
         self.scale = scale
         self.color = color
 
-    def add_item(item):
+    def item_to_marker(self, item):
         marker = Marker()
-        marker.header.frame_id = self.frame_id
+        marker.header.frame_id = item.frame_id
         marker.header.stamp = rospy.Time.now()
-        marker.ns = item.namespace
-        marker.id = item.id
-        marker.text = item.info_map
-        marker.pose.position.x = item.x
-        marker.pose.position.y = item.y
-        marker.pose.position.z = item.z
-        marker.pose.orientation.x = item.ox
-        marker.pose.orientation.y = item.oy
-        marker.pose.orientation.z = item.oz
-        marker.pose.orientation.w = item.ow
+        marker.ns = item.marker_namespace
+        marker.id = item.marker_id
+        marker.text = str(item.info_map)
+
+        # Get the pose
+        quaternion = tf.transformations.quaternion_from_matrix(item.pose)
+        marker.pose.position.x = item.pose[0,3]
+        marker.pose.position.y = item.pose[1,3]
+        marker.pose.position.z = item.pose[2,3]
+        marker.pose.orientation.x = quaternion[0]
+        marker.pose.orientation.y = quaternion[1]
+        marker.pose.orientation.z = quaternion[2]
+        marker.pose.orientation.w = quaternion[3]
+
+        # Auxiliary information
         marker.type = self.marker_type
         marker.scale.x = self.scale[0]
         marker.scale.y = self.scale[1]
@@ -41,5 +49,4 @@ class MarkerManager:
         marker.color.b = self.color[3]
         marker.lifetime = rospy.Duration(0)
 
-        self.marker_list.append(marker)
-
+        return marker
