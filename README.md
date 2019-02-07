@@ -31,7 +31,7 @@ It supports either directly calling `detect_objects()` or publishing a ROS topic
 `PerceptionModule` may optionally use this marker manager as a convenient way to populate markers with particular type, scale, and color.
 
 ### PerceptionModule
-`PerceptionModule` is a wrapper for ROS communication with aikido's `PoseEstimatorModule`. It mainly converts detected items' poses from the detectino frame to the destination frame.
+`PerceptionModule` is a wrapper for ROS communication with aikido's `PoseEstimatorModule`. It mainly converts detected items' poses from the detection frame to the destination frame.
 
 Each perception module listens to a single detection frame's marker topic and transforms the detected items into the destination frame.
 
