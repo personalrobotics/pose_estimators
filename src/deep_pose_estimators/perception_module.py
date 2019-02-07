@@ -7,6 +7,7 @@ from tf import TransformListener
 import rospy
 import numpy
 
+
 class PerceptionException(Exception):
     pass
 
@@ -85,9 +86,8 @@ class PerceptionModule(object):
             markers.append(purge_marker)
 
         if self.pose_estimator is None:
-            marker_message = rospy.wait_for_message(self.marker_topic,
-                                                    MarkerArray,
-                                                    timeout=self.timeout)
+            marker_message = rospy.wait_for_message(
+                self.marker_topic, MarkerArray, timeout=self.timeout)
 
             items = [DetectedItem.from_marker(marker) for
                                         marker in marker_message.markers]

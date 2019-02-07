@@ -2,6 +2,7 @@ import rospy
 from visualization_msgs.msg import Marker
 import tf
 import json
+import collections
 
 from deep_pose_estimators.detected_item import DetectedItem
 
@@ -36,7 +37,7 @@ class MarkerManager(object):
 
     def clear(self):
         if self.count_items:
-            self.item_counter = dict()
+            self.item_counter = collections.defaultdict(int)
 
     def item_to_marker(self, item):
         marker = Marker()
@@ -46,11 +47,7 @@ class MarkerManager(object):
         marker.text = json.dumps(item.info_map)
 
         if self.count_items:
-            if item.marker_namespace in self.item_counter:
-                self.item_counter[item.marker_namespace] += 1
-            else:
-                self.item_counter[item.marker_namespace] = 1
-
+            self.item_counter[item.marker_namespace] += 1
             marker.id = self.item_counter[item.marker_namespace]
 
         # Get the pose
