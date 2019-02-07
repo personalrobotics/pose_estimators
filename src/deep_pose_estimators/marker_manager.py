@@ -52,6 +52,8 @@ class MarkerManager(object):
         if self.count_items:
             self.item_counter[item.marker_namespace] += 1
             marker.id = self.item_counter[item.marker_namespace]
+        else:
+            marker.id = item.marker_id
 
         # Get the pose
         quaternion = quaternion_from_matrix(item.pose)
