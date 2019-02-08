@@ -10,10 +10,10 @@ class CameraSubscriber(object):
     """
     A class which can subscribe to camera topics and publish detected images.
     """
-    def __init__(self, 
+    def __init__(self,
             image_topic, image_msg_type, depth_image_topic,
             point_cloud_topic, camera_info_topic):
-        
+
         self.image_topic = image_topic
         self.image_msg_type = image_msg_type
         self.image_compressed = image_compressed
@@ -37,16 +37,14 @@ class CameraSubscriber(object):
                 self.sensor_image_callback, queue_size=1)
         print('subscribed to {}'.format(self.image_topic))
 
-        if (self.depth_image_topic is not None and
-                len(self.depth_image_topic) > 0):
+        if self.depth_image_topic:
             # subscribe depth topic, only raw for now
             self.depth_subscriber = rospy.Subscriber(
                 self.depth_image_topic, Image,
                 self.sensor_depth_callback, queue_size=1)
             print('subscribed to {}'.format(self.depth_image_topic))
 
-        if (self.pointcloud_topic is not None and
-                len(self.pointcloud_topic) > 0):
+        if self.pointcloud_topic:
             self.pointcloud_subscriber = rospy.Subscriber(
                 self.pointcloud_topic, pc2.PointCloud2,
                 self.lidar_scan_callback, queue_size=10)
