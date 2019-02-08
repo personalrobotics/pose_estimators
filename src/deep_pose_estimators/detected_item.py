@@ -1,4 +1,5 @@
 import numpy
+import json
 import rospy
 
 from visualization_msgs.msg import Marker
@@ -34,8 +35,13 @@ class DetectedItem(object):
         if not isinstance(marker, Marker):
             raise ValueError("The provided marker is not Marker.")
 
-        # TODO: parse from the marker_message
-        frame_id, namespace, idx, db_key, info_map = cls.parse_marker_message(marker)
+        # parse from the marker_message
+        frame_id = marker.header.frame_id
+        detected_time = marker.header.stamp
+        namespace = marker.ns
+        idx = marker.id
+        info_map = json.loads(marker.text)
+        db_key = info_map['db_key']
 
         marker_pose = numpy.array(quaternion_matrix([
                 marker.pose.orientation.x,
@@ -54,4 +60,5 @@ class DetectedItem(object):
         # accesssible via db_key.
         object_pose = marker_pose
 
-        return DetectedItem(frame_id, namespace, idx, db_key, info_map, object_pose)
+        return cls(frame_id, namespace, idx, db_key, info_map,
+                   object_pose, detected_time)
