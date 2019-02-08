@@ -6,6 +6,7 @@ from tf.transformations import quaternion_matrix
 from tf import TransformListener
 import rospy
 import numpy
+from deep_pose_estimators.utils.ros_utils import get_transform_matrix
 
 
 class PerceptionException(Exception):
@@ -95,20 +96,8 @@ class PerceptionModule(object):
             items = self.pose_estimator.detect_objects()
 
         # Get the transform from destination to detection frame
-        self.listener.waitForTransform(
-                self.detection_frame,
-                self.destination_frame,
-                rospy.Time(),
-                rospy.Duration(self.timeout))
-        frame_trans, frame_rot = self.listener.lookupTransform(
-                self.destination_frame,
-                self.detection_frame,
-                rospy.Time(0))
-
-        frame_offset = numpy.matrix(quaternion_matrix(frame_rot))
-        frame_offset[0,3] = frame_trans[0]
-        frame_offset[1,3] = frame_trans[1]
-        frame_offset[2,3] = frame_trans[2]
+        frame_offset = get_transform_matrix(
+            self.listener, self.destination_frame, self.detection_frame, self.timeout)
 
         # Convert items to be in desination frame
         for item in items:
