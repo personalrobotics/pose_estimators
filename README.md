@@ -29,6 +29,8 @@ Each application would need to implement a `PoseEstimator` and use/inherit `Mark
 
 A application-specific pose estimator should inherit `PoseEstimator` and implement `detect_objects`. You may have to inherit the `MarkerManager` for more customized markers, or use the current one if single (type, scale, color)-markers are sufficient. The marker manager and pose estimator should be passed to initialize a `PerceptionModule`, which is then passed to `run_detection`. See `scripts/run_sim_perception_module.py` for a simple example. Each application would need a similar script.
 
+# Installation requirements
+Install `pcl` as instructed in [python-pcl](https://github.com/strawlab/python-pcl)
 
 ## Running a detection script on a robot
 
@@ -39,7 +41,7 @@ source $(catkin locate)/devel/setup.bash
 roscore
 ```
 
-2. Launch the robot, camera, tf transform, etc. 
+2. Launch the robot, camera, tf transform, etc.
 
 For `run_sim_perception_module.py`, you need to publish a static transform, e.g.
 ```
