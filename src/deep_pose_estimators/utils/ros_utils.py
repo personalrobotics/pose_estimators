@@ -1,6 +1,9 @@
 import numpy
 import rospy
 
+from tf.transformations import quaternion_matrix
+
+
 def get_transform_matrix(listener, source_frame, target_frame, timeout):
     """
     Returns the transformation matrix from source to target frame

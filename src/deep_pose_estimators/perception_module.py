@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from deep_pose_estimators.detected_item import DetectedItem
-from visualization_msgs.msg import MarkerArray
+from visualization_msgs.msg import MarkerArray, Marker
 from tf.transformations import quaternion_matrix
 from tf import TransformListener
 import rospy
@@ -61,7 +61,7 @@ class PerceptionModule(object):
 
         self.listener = TransformListener()
         self.timeout = timeout
-        self.purge_all_markers_per_update
+        self.purge_all_markers_per_update = purge_all_markers_per_update
 
     def __str__(self):
         return self.__class__.__name__

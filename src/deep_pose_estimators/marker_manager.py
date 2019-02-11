@@ -3,7 +3,7 @@ import json
 import collections
 
 from visualization_msgs.msg import Marker
-from tf.transformations import quaternion_matrix
+from tf.transformations import quaternion_from_matrix
 
 from deep_pose_estimators.detected_item import DetectedItem
 
@@ -24,8 +24,8 @@ class MarkerManager(object):
                  marker_type=Marker.CUBE,
                  scale=[0.01, 0.01, 0.01],
                  color=[0.5, 1.0, 0.5, 0.1],
-                 **kwargs,
-                 count_items=True):
+                 count_items=True,
+                 **kwargs):
         """
         @param count_items: if True, MarkerManager is in charge of counting the items.
 
