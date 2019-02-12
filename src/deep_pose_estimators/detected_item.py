@@ -1,5 +1,5 @@
 import numpy
-import json
+import yaml
 import rospy
 
 from visualization_msgs.msg import Marker
@@ -40,7 +40,7 @@ class DetectedItem(object):
         detected_time = marker.header.stamp
         namespace = marker.ns
         idx = marker.id
-        info_map = json.loads(marker.text)
+        info_map = yaml.load(marker.text)
         db_key = info_map['db_key']
 
         marker_pose = numpy.array(quaternion_matrix([

@@ -1,5 +1,5 @@
 import rospy
-import json
+import yaml
 import collections
 
 from visualization_msgs.msg import Marker
@@ -47,7 +47,7 @@ class MarkerManager(object):
         marker.header.frame_id = item.frame_id
         marker.header.stamp = rospy.Time.now()
         marker.ns = item.marker_namespace
-        marker.text = json.dumps(item.info_map)
+        marker.text = yaml.dump(item.info_map)
 
         if self.count_items:
             self.item_counter[item.marker_namespace] += 1
