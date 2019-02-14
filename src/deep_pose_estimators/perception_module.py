@@ -68,7 +68,7 @@ class PerceptionModule(object):
 
     def get_detected_objects_as_markers(self):
         """
-        Returns a list of markers, each corresponding to a detected item in world frame.
+        Returns a list of markers, each corresponding to a detected item in destination frame.
         @retun A list of DetectedItems
         """
 
