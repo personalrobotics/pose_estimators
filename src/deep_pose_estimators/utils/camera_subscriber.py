@@ -48,7 +48,7 @@ class CameraSubscriber(object):
             self.pointcloud_subscriber = rospy.Subscriber(
                 self.pointcloud_topic, pc2.PointCloud2,
                 self.lidar_scan_callback, queue_size=10)
-            print('subscribed to {}'.format(self.pointcloud_topic))
+            print('Subscribed to {}'.format(self.pointcloud_topic))
 
         # subscribe camera info topic
         self.subscriber = rospy.Subscriber(
