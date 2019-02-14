@@ -8,7 +8,7 @@ from cv_bridge import CvBridge
 
 class CameraSubscriber(object):
     """
-    A class which can subscribe to camera topics and publish detected images.
+    A class which subscribes to camera topics and publishes detected images.
     """
     def __init__(self,
             image_topic, image_msg_type, depth_image_topic,
