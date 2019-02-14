@@ -33,4 +33,3 @@ class SimPoseEstimator(PoseEstimator):
         self.item1.detected_time = rospy.Time.now()
         self.item2.detected_time = rospy.Time.now()
         return [self.item1, self.item2]
-

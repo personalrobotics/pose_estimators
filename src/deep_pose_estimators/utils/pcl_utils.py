@@ -1,8 +1,8 @@
-import sys
 import ctypes
 import struct
-
 import pcl
+import rospy
+
 import sensor_msgs.point_cloud2 as pc2
 
 

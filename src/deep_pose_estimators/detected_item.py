@@ -1,6 +1,5 @@
 import numpy
 import yaml
-import rospy
 
 from visualization_msgs.msg import Marker
 from tf.transformations import quaternion_matrix
@@ -25,7 +24,6 @@ class DetectedItem(object):
         self.info_map = info_map
         self.info_map['db_key'] = db_key
 
-
     @classmethod
     def from_marker(cls, marker):
         """
@@ -48,9 +46,9 @@ class DetectedItem(object):
                 marker.pose.orientation.y,
                 marker.pose.orientation.z,
                 marker.pose.orientation.w]))
-        marker_pose[0,3] = marker.pose.position.x
-        marker_pose[1,3] = marker.pose.position.y
-        marker_pose[2,3] = marker.pose.position.z
+        marker_pose[0, 3] = marker.pose.position.x
+        marker_pose[1, 3] = marker.pose.position.y
+        marker_pose[2, 3] = marker.pose.position.z
 
         # TODO: this currently assumes that the marker pose is
         # the reference pose of the object, but if there's any offset,

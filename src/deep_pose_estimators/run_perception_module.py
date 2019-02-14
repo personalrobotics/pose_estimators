@@ -1,10 +1,14 @@
 #!/usr/bin/env python
+
 import rospy
+
 from visualization_msgs.msg import MarkerArray
 
 
-""" Should be called after initializing a ros node """
-def run_detection(destination_frame_marker_topic, frequency, perception_module):
+# Should be called after initializing a ros node
+def run_detection(destination_frame_marker_topic,
+                  frequency,
+                  perception_module):
     try:
         pub_pose = rospy.Publisher(
             '{}/marker_array'.format(destination_frame_marker_topic),

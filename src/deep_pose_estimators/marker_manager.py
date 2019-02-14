@@ -5,12 +5,11 @@ import collections
 from visualization_msgs.msg import Marker
 from tf.transformations import quaternion_from_matrix
 
-from deep_pose_estimators.detected_item import DetectedItem
 
-
-# TODO: When count_items is true, Markermanager is in charge of putting id to the markers.
-# Currently, no postprocessing is done to assign the same id to the same object in
-# consecutive frames.
+# TODO: When count_items is true, Markermanager is in charge of putting id to
+# the markers.
+# Currently, no postprocessing is done to assign the same id to the same object
+# in consecutive frames.
 # clear() must be called at every frame to reset the counter.
 class MarkerManager(object):
     """
@@ -27,7 +26,8 @@ class MarkerManager(object):
                  count_items=True,
                  **kwargs):
         """
-        @param count_items: if True, MarkerManager is in charge of counting the items.
+        @param count_items: if True, MarkerManager is in charge of counting
+        the items.
 
         """
         self.marker_type = marker_type
@@ -57,9 +57,9 @@ class MarkerManager(object):
 
         # Get the pose
         quaternion = quaternion_from_matrix(item.pose)
-        marker.pose.position.x = item.pose[0,3]
-        marker.pose.position.y = item.pose[1,3]
-        marker.pose.position.z = item.pose[2,3]
+        marker.pose.position.x = item.pose[0, 3]
+        marker.pose.position.y = item.pose[1, 3]
+        marker.pose.position.z = item.pose[2, 3]
         marker.pose.orientation.x = quaternion[0]
         marker.pose.orientation.y = quaternion[1]
         marker.pose.orientation.z = quaternion[2]
