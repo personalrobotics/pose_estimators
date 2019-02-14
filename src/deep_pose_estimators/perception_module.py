@@ -36,7 +36,6 @@ class PerceptionModule(object):
                  purge_all_markers_per_update=True):
         """
         This initializes a Perception module.
-
         @param pose_estimator If pose_estimator is provided, its detect_objects
         will be called instead of subscribing to a marker topic.
         @param destination_frame_marker_topic The ROS topic to publish markers
@@ -78,7 +77,6 @@ class PerceptionModule(object):
         """
         Returns a list of markers, each corresponding to a detected item in
         destination frame.
-
         @return A list of DetectedItems
         """
         markers = list()

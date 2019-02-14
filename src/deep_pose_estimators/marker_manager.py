@@ -17,7 +17,6 @@ class MarkerManager(object):
     in addition to what DetectedItem provides.
     PerceptionModule may optionally use this marker manager as a convenient way
     to populate markers with particular type, scale, and color.
-
     """
     def __init__(self,
                  marker_type=Marker.CUBE,
@@ -28,7 +27,6 @@ class MarkerManager(object):
         """
         @param count_items: if True, MarkerManager is in charge of counting
         the items.
-
         """
         self.marker_type = marker_type
         self.scale = scale

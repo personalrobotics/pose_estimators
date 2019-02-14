@@ -9,9 +9,7 @@ import sensor_msgs.point_cloud2 as pc2
 def ros_to_pcl(ros_cloud):
     """
     Converts a ROS PointCloud2 message to a pcl PointXYZRGB
-
     @param ros_cloud ROS PointCloud2 message
-
     @return PCL XYZRGB point cloud (pcl.PointCloud_PointXYZRGB)
     """
     points_list = list()
@@ -28,9 +26,7 @@ def ros_to_pcl(ros_cloud):
 def pcl_to_ros(pcl_array, conf):
     """
     Converts a ROS PointCloud2 message to a pcl PointXYZRGB
-
     @param pcl_array A PCL XYZRGB point cloud (PointCloud_PointXYZRGB)
-
     @return A ROS point cloud (PointCloud2)
     """
     ros_msg = pc2.PointCloud2()
