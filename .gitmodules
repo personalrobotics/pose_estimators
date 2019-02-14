@@ -1,0 +1,4 @@
+[submodule "src/deep_pose_estimators/external/pytorch_retinanet"]
+	path = src/deep_pose_estimators/external/pytorch_retinanet
+  url = https://github.com/personalrobotics/pytorch_retinanet.git
+  branch = ada

@@ -5,6 +5,7 @@ __pycache__/
 
 # C extensions
 *.so
+*.c
 
 # Distribution / packaging
 .Python
@@ -99,3 +100,9 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+# vscode
+.vscode
+
+# logs
+runs/
