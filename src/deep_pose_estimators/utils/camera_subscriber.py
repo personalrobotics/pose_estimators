@@ -34,7 +34,7 @@ class CameraSubscriber(object):
             self.img_subscriber = rospy.Subscriber(
                 self.image_topic, Image,
                 self.sensor_image_callback, queue_size=1)
-        print('subscribed to {}'.format(self.image_topic))
+        print('Subscribed to {}'.format(self.image_topic))
 
         if self.depth_image_topic:
             # subscribe depth topic, only raw for now
