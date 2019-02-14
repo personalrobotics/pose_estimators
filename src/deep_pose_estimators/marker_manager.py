@@ -36,6 +36,7 @@ class MarkerManager(object):
         self.kwargs = kwargs
         self.count_items = count_items
 
+        self.item_counter = None
         self.clear()
 
     def clear(self):
@@ -81,3 +82,12 @@ class MarkerManager(object):
                 setattr(marker, key, self.kwargs[key])
 
         return marker
+
+    def get_uid_pair_list(self):
+        return [uid for uid in self.get_uid_pair_list_iter()]
+
+    def get_uid_pair_list_iter(self):
+        if self.count_items:
+            for ns, count in self.item_counter.items():
+                for idx in range(1, count + 1):
+                    yield (ns, idx)

@@ -81,19 +81,19 @@ class PerceptionModule(object):
 
         @return A list of DetectedItems
         """
-        markers = []
+        markers = list()
         if self.purge_all_markers_per_update:
+            # delete all markers counted by marker_manager
+            for uid_ns, uid_id in self.marker_manager.get_uid_pair_list_iter():
+                purge_marker = Marker()
+                purge_marker.header.frame_id = self.destination_frame
+                purge_marker.header.stamp = rospy.Time.now()
+                purge_marker.id = uid_id
+                purge_marker.ns = uid_ns
+                purge_marker.type = Marker.CUBE
+                purge_marker.action = Marker.DELETE
+                markers.append(purge_marker)
             self.marker_manager.clear()
-
-            # A marker responsible for deleting all previous markers
-            purge_marker = Marker()
-            purge_marker.header.frame_id = self.destination_frame
-            purge_marker.header.stamp = rospy.Time.now()
-            purge_marker.id = 0
-            purge_marker.ns = 'item'
-            purge_marker.type = Marker.CUBE
-            purge_marker.action = Marker.DELETEALL
-            markers.append(purge_marker)
 
         if self.pose_estimator is None:
             marker_message = rospy.wait_for_message(
