@@ -54,7 +54,7 @@ class CameraSubscriber(object):
         self.subscriber = rospy.Subscriber(
                 self.camera_info_topic, CameraInfo,
                 self.camera_info_callback)
-        print('subscribed to {}'.format(self.camera_info_topic))
+        print('Subscribed to {}'.format(self.camera_info_topic))
 
     def sensor_compressed_image_callback(self, ros_data):
         np_arr = np.fromstring(ros_data.data, np.uint8)
