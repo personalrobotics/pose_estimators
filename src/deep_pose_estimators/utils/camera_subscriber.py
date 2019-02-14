@@ -42,7 +42,7 @@ class CameraSubscriber(object):
             self.depth_subscriber = rospy.Subscriber(
                 self.depth_image_topic, Image,
                 self.sensor_depth_callback, queue_size=1)
-            print('subscribed to {}'.format(self.depth_image_topic))
+            print('Subscribed to {}'.format(self.depth_image_topic))
 
         if self.pointcloud_topic:
             self.pointcloud_subscriber = rospy.Subscriber(
