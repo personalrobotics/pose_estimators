@@ -21,4 +21,7 @@ class PoseEstimator(object):
 
     @abc.abstractmethod
     def detect_objects(self):
+        """
+        @return list of DetectedItems.
+        """
         raise NotImplementedError
