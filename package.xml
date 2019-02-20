@@ -17,6 +17,7 @@
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>tf</exec_depend>
-  <exec_depend>pcl</exec_depend>
+  <!-- HERB only -->
+  <!--<exec_depend>pcl</exec_depend>-->
 
 </package>
