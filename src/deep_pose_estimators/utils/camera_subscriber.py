@@ -10,15 +10,17 @@ class CameraSubscriber(object):
     """
     A class which subscribes to camera topics and publishes detected images.
     """
-    def __init__(self, image_topic, image_msg_type, image_compressed,
-                 depth_image_topic, point_cloud_topic, camera_info_topic):
+    def __init__(self, image_topic, image_msg_type,
+                 depth_image_topic, pointcloud_topic, camera_info_topic):
 
         self.image_topic = image_topic
         self.image_msg_type = image_msg_type
-        self.image_compressed = image_compressed
         self.depth_image_topic = depth_image_topic
-        self.point_cloud_topic = point_cloud_topic
+        self.pointcloud_topic = pointcloud_topic
         self.camera_info_topic = camera_info_topic
+
+        self.img_msg = None
+        self.depth_img_msg = None
 
         self.init_ros_subscribers()
 
@@ -26,7 +28,7 @@ class CameraSubscriber(object):
 
     def init_ros_subscribers(self):
         # subscribe image topic
-        if self.msg_type == 'compressed':
+        if self.image_msg_type == 'compressed':
             self.img_subscriber = rospy.Subscriber(
                 self.image_topic, CompressedImage,
                 self.sensor_compressed_image_callback, queue_size=1)
