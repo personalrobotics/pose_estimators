@@ -16,8 +16,11 @@ class CameraSubscriber(object):
         self.image_topic = image_topic
         self.image_msg_type = image_msg_type
         self.depth_image_topic = depth_image_topic
-        self.pointcloud_topic = point_cloud_topic
+        self.pointcloud_topic = pointcloud_topic
         self.camera_info_topic = camera_info_topic
+
+        self.img_msg = None
+        self.depth_img_msg = None
 
         self.init_ros_subscribers()
 
