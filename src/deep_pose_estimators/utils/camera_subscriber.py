@@ -11,12 +11,12 @@ class CameraSubscriber(object):
     A class which subscribes to camera topics and publishes detected images.
     """
     def __init__(self, image_topic, image_msg_type,
-                 depth_image_topic, point_cloud_topic, camera_info_topic):
+                 depth_image_topic, pointcloud_topic, camera_info_topic):
 
         self.image_topic = image_topic
         self.image_msg_type = image_msg_type
         self.depth_image_topic = depth_image_topic
-        self.point_cloud_topic = point_cloud_topic
+        self.pointcloud_topic = point_cloud_topic
         self.camera_info_topic = camera_info_topic
 
         self.init_ros_subscribers()
