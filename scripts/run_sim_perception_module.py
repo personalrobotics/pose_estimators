@@ -1,3 +1,4 @@
+#!/usr/bin/python
 # Example script for running a perception module
 
 from deep_pose_estimators.pose_estimators import SimPoseEstimator
@@ -14,7 +15,7 @@ import rospy
 
 if __name__ == "__main__":
     detection_frame = "camera_color_optical_frame"
-    destination_frame = "map"
+    destination_frame = "camera_color_optical_frame"
     # Change to Robot Base Link, e.g.:
     # destination_frame = "j2n6s200_link_base"
 
