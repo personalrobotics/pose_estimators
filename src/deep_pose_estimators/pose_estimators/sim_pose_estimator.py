@@ -4,7 +4,7 @@ import rospy
 import numpy
 from deep_pose_estimators.pose_estimators import PoseEstimator
 from deep_pose_estimators.detected_item import DetectedItem
-
+from copy import copy
 
 class SimPoseEstimator(PoseEstimator):
     def __init__(self, frame_id):
@@ -32,4 +32,4 @@ class SimPoseEstimator(PoseEstimator):
     def detect_objects(self):
         self.item1.detected_time = rospy.Time.now()
         self.item2.detected_time = rospy.Time.now()
-        return [self.item1, self.item2]
+        return [copy(self.item1), copy(self.item2)]
