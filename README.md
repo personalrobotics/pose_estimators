@@ -1,8 +1,8 @@
-# deep_pose_estimators
-Deep Pose Estimators is a ROS wrapper for python-based pose detectors to publish marker topic in world frame. It is mainly used to commuicate with [aikido](https://github.com/personalrobotics/aikido)'s perception module.
+# pose_estimators
+Pose Estimators is a ROS wrapper for python-based pose detectors to publish marker topic in world frame. It is mainly used to commuicate with [aikido](https://github.com/personalrobotics/aikido)'s perception module.
 
-## Components of deep_pose_estimators
-Deep Pose Estimators is composed of four modules and a few convenience methods.
+## Components of pose_estimators
+Pose Estimators is composed of four modules and a few convenience methods.
 
 ### PoseEstimator
 `PoseEstimator` is an abstract class for detection in camera frame. Each application is expected to inherit PoseEstimator and implement `detect_objects` method. For example, one can create a CNNPoseEstimator which uses a trained CNN-based estimator to  detect and classify objects from image streams. Typically a pose estimator subscribes to camera image/depth topics and perform the detection when `detect_objects` is called. `detect_objects` returns _all_ detected items in the image, as a list of `DetectedItem`. It can optionally publish a marker topic which contains pose and any other auxiliary information (e.g. object class).
@@ -36,7 +36,7 @@ Install `pcl` as instructed in [python-pcl](https://github.com/strawlab/python-p
 
 1. Setup catkin environment and start rosmaster.
 ```
-cd CATKIN_WS/src/deep_pose_estimators/scripts
+cd CATKIN_WS/src/pose_estimators/scripts
 source $(catkin locate)/devel/setup.bash
 roscore
 ```
