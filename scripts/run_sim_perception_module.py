@@ -1,6 +1,9 @@
+#!/usr/bin/python2
+# Supports only python2 due to ros dependency
 # Example script for running a perception module
+from __future__ import absolute_import
 
-from pose_estimators.pose_estimators import SimPoseEstimator
+from pose_estimators.sim_pose_estimator import SimPoseEstimator
 from pose_estimators.perception_module import PerceptionModule
 from pose_estimators.marker_manager import MarkerManager
 from pose_estimators.run_perception_module import run_detection
