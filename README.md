@@ -1,6 +1,8 @@
 # pose_estimators
 Pose Estimators is a ROS wrapper for python-based pose detectors to publish marker topic in world frame. It is mainly used to commuicate with [aikido](https://github.com/personalrobotics/aikido)'s perception module.
 
+Due to the ROS dependency, Pose Estimators suports only Python2.
+
 ## Components of pose_estimators
 Pose Estimators is composed of four modules and a few convenience methods.
 

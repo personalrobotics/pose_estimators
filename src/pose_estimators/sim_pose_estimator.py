@@ -1,8 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/python2
+from __future__ import absolute_import
 
 import rospy
 import numpy
-from pose_estimators.pose_estimators import PoseEstimator
+from pose_estimators.pose_estimator import PoseEstimator
 from pose_estimators.detected_item import DetectedItem
 
 

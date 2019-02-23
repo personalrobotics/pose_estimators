@@ -1,4 +1,5 @@
-#!/usr/bin/env python
+#!/usr/bin/python2
+from __future__ import absolute_import
 
 import numpy
 import rospy
