@@ -6,8 +6,8 @@ import rospy
 from visualization_msgs.msg import MarkerArray, Marker
 from tf import TransformListener
 
-from deep_pose_estimators.detected_item import DetectedItem
-from deep_pose_estimators.utils.ros_utils import get_transform_matrix
+from pose_estimators.detected_item import DetectedItem
+from pose_estimators.utils.ros_utils import get_transform_matrix
 
 
 class PerceptionException(Exception):
