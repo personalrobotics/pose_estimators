@@ -1,2 +1,3 @@
 from camera_subscriber import CameraSubscriber
+from image_publisher import ImagePublisher
 import ros_utils
