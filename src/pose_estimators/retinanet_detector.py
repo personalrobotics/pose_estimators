@@ -109,7 +109,6 @@ class RetinaNetDetector(PoseEstimator, CameraSubscriber, ImagePublisher):
                     ids_to_delete.append(matched_id)
                 min_distance = distance
                 matched_id = bid
-                # matched_position = (bx, by)
 
         if ids_to_delete:
             print("Delete ", ids_to_delete)
@@ -140,7 +139,6 @@ class RetinaNetDetector(PoseEstimator, CameraSubscriber, ImagePublisher):
             return -1
         z0 = np.mean(depth)
         return z0 / 1000.0  # mm to m
-
 
     def detect_objects(self):
         if self.img_msg is None:
@@ -222,7 +220,7 @@ class RetinaNetDetector(PoseEstimator, CameraSubscriber, ImagePublisher):
                 continue
 
             # the pred_angle was default to be half a pi (90 degrees)
-            # to rotate the TSR by 90 degree along Z-axis (depth)
+            # to rotate the TSR by 90 degree along X-axis
             # which assumes that the new Z-axis is pointing up from the camera
             x, y, z, w = quaternion_from_euler(np.pi/2, 0., 0.)
             rvec = np.array([x, y, z, w])
