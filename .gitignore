@@ -106,3 +106,7 @@ ENV/
 
 # logs
 runs/
+
+# Vim
+*.swp
+*.swo
