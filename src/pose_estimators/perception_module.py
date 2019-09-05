@@ -33,7 +33,7 @@ class PerceptionModule(object):
                  detection_frame,
                  destination_frame='map',
                  detection_frame_marker_topic=None,
-                 timeout=1.0,
+                 timeout=2.0,
                  purge_all_markers_per_update=True):
         """
         This initializes a Perception module.
