@@ -255,7 +255,7 @@ class RetinaNetDetector(PoseEstimator, CameraSubscriber, ImagePublisher):
             box = boxes[idx]
             color = (255, 0, 0) if (box_skipped and box_skipped[idx]) \
                                      else (0, 255, 0)
-            draw.rectangle(box, outline=color+(200,), width=3)
+            draw.rectangle(box, outline=color+(200,))
 
             item_tag = '{0}: {1:.2f}'.format(
                 labels[idx],
