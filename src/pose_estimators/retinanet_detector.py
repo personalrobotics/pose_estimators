@@ -32,6 +32,7 @@ class RetinaNetDetector(PoseEstimator, CameraSubscriber, ImagePublisher):
             node_name=rospy.get_name(),
             camera_tilt=1e-5,
             camera_to_table=0, # if depth fails, use this to calculate distance
+            pred_angle=np.pi/2,
             image_topic='/camera/color/image_raw/compressed',
             image_msg_type='compressed',
             depth_image_topic='/camera/aligned_depth_to_color/image_raw',
@@ -57,6 +58,7 @@ class RetinaNetDetector(PoseEstimator, CameraSubscriber, ImagePublisher):
         self.use_cuda = use_cuda
         self.camera_tilt = camera_tilt
         self.camera_to_table = camera_to_table
+        self.pred_angle = pred_angle
 
         self.retinanet, self.retinanet_transform, self.encoder = \
             load_retinanet(use_cuda, retinanet_checkpoint)
@@ -222,7 +224,7 @@ class RetinaNetDetector(PoseEstimator, CameraSubscriber, ImagePublisher):
             # the pred_angle was default to be half a pi (90 degrees)
             # to rotate the TSR by 90 degree along X-axis
             # which assumes that the new Z-axis is pointing up from the camera
-            x, y, z, w = quaternion_from_euler(np.pi/2, 0., 0.)
+            x, y, z, w = quaternion_from_euler(self.pred_angle, 0., 0.)
             rvec = np.array([x, y, z, w])
 
             # To compute the offset
@@ -255,7 +257,7 @@ class RetinaNetDetector(PoseEstimator, CameraSubscriber, ImagePublisher):
             box = boxes[idx]
             color = (255, 0, 0) if (box_skipped and box_skipped[idx]) \
                                      else (0, 255, 0)
-            draw.rectangle(box, outline=color+(200,), width=3)
+            draw.rectangle(box, outline=color+(200,))
 
             item_tag = '{0}: {1:.2f}'.format(
                 labels[idx],
