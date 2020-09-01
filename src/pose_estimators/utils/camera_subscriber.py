@@ -20,6 +20,8 @@ class CameraSubscriber(object):
         self.camera_info_topic = camera_info_topic
 
         self.img_msg = None
+        self.push_str = None
+        
         self.depth_img_msg = None
 
         self.init_ros_subscribers()
@@ -27,16 +29,16 @@ class CameraSubscriber(object):
         self.bridge = CvBridge()
 
     def init_ros_subscribers(self):
-        # subscribe image topic
-        if self.image_msg_type == 'compressed':
-            self.img_subscriber = rospy.Subscriber(
-                self.image_topic, CompressedImage,
-                self.sensor_compressed_image_callback, queue_size=1)
-        else:  # raw
-            self.img_subscriber = rospy.Subscriber(
-                self.image_topic, Image,
-                self.sensor_image_callback, queue_size=1)
-        print('Subscribed to {}'.format(self.image_topic))
+        # # subscribe image topic
+        # if self.image_msg_type == 'compressed':
+        #     self.img_subscriber = rospy.Subscriber(
+        #         self.image_topic, CompressedImage,
+        #         self.sensor_compressed_image_callback, queue_size=1)
+        # else:  # raw
+        #     self.img_subscriber = rospy.Subscriber(
+        #         self.image_topic, Image,
+        #         self.sensor_image_callback, queue_size=1)
+        # print('Subscribed to {}'.format(self.image_topic))
 
         if self.depth_image_topic:
             # subscribe depth topic, only raw for now

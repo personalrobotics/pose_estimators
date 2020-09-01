@@ -1,9 +1,11 @@
 #!/usr/bin/python2
 from __future__ import absolute_import
 
-import numpy
+import numpy as np
 import rospy
+import cv2
 
+from sensor_msgs.msg import CompressedImage, Image, CameraInfo
 from visualization_msgs.msg import MarkerArray, Marker
 from tf import TransformListener
 
@@ -74,6 +76,39 @@ class PerceptionModule(object):
     def __str__(self):
         return self.__class__.__name__
 
+    def start(self):
+
+        if self.pose_estimator.image_msg_type == 'compressed':
+            self.pose_estimator.img_subscriber = rospy.Subscriber(
+                self.pose_estimator.image_topic, CompressedImage,
+                self.sensor_compressed_image_callback, queue_size=1)
+        else:  # raw
+            self.pose_estimator.img_subscriber = rospy.Subscriber(
+                self.pose_estimator.image_topic, Image,
+                self.sensor_image_callback, queue_size=1)
+        print('Subscribed to {}'.format(self.pose_estimator.image_topic))
+        
+        self.pub_pose = rospy.Publisher(
+            '{}/marker_array'.format('/ReconfigManager/in/spanet'),
+            MarkerArray,
+            queue_size=1)
+
+    def sensor_compressed_image_callback(self, ros_data):
+        np_arr = np.fromstring(ros_data.data, np.uint8)
+        new_msg = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        self.pose_estimator.img_msg = cv2.cvtColor(new_msg, cv2.COLOR_BGR2RGB)
+        self.pose_estimator.push_str = ros_data.header.frame_id
+
+        markers = self.get_detected_objects_as_markers()
+        self.pub_pose.publish(markers)
+
+    def sensor_image_callback(self, ros_data):
+        self.pose_estimator.img_msg = self.bridge.imgmsg_to_cv2(ros_data, 'rgb8') 
+        self.pose_estimator.push_str = ros_data.header.frame_id
+
+        markers = self.get_detected_objects_as_markers()
+        self.pub_pose.publish(markers)       
+
     def get_detected_objects_as_markers(self):
         """
         Returns a list of markers, each corresponding to a detected item in
@@ -110,7 +145,7 @@ class PerceptionModule(object):
 
         # Convert items to be in desination frame
         for item in items:
-            item.pose = numpy.dot(frame_offset, item.pose)
+            item.pose = np.dot(frame_offset, item.pose)
             item.frame_id = self.destination_frame
             markers += [self.marker_manager.item_to_marker(item)]
 
