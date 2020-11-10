@@ -76,40 +76,7 @@ class PerceptionModule(object):
     def __str__(self):
         return self.__class__.__name__
 
-    def start(self):
-
-        if self.pose_estimator.image_msg_type == 'compressed':
-            self.pose_estimator.img_subscriber = rospy.Subscriber(
-                self.pose_estimator.image_topic, CompressedImage,
-                self.sensor_compressed_image_callback, queue_size=1)
-        else:  # raw
-            self.pose_estimator.img_subscriber = rospy.Subscriber(
-                self.pose_estimator.image_topic, Image,
-                self.sensor_image_callback, queue_size=1)
-        print('Subscribed to {}'.format(self.pose_estimator.image_topic))
-        
-        self.pub_pose = rospy.Publisher(
-            '{}/marker_array'.format('/ReconfigManager/in/spanet'),
-            MarkerArray,
-            queue_size=1)
-
-    def sensor_compressed_image_callback(self, ros_data):
-        np_arr = np.fromstring(ros_data.data, np.uint8)
-        new_msg = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-        self.pose_estimator.img_msg = cv2.cvtColor(new_msg, cv2.COLOR_BGR2RGB)
-        self.pose_estimator.push_str = ros_data.header.frame_id
-
-        markers = self.get_detected_objects_as_markers()
-        self.pub_pose.publish(markers)
-
-    def sensor_image_callback(self, ros_data):
-        self.pose_estimator.img_msg = self.bridge.imgmsg_to_cv2(ros_data, 'rgb8') 
-        self.pose_estimator.push_str = ros_data.header.frame_id
-
-        markers = self.get_detected_objects_as_markers()
-        self.pub_pose.publish(markers)       
-
-    def get_detected_objects_as_markers(self):
+    def get_detected_objects_as_markers(self, raw_img=None):
         """
         Returns a list of markers, each corresponding to a detected item in
         destination frame.
@@ -128,7 +95,8 @@ class PerceptionModule(object):
                 purge_marker.action = Marker.DELETE
                 markers.append(purge_marker)
             self.marker_manager.clear()
-
+        
+        bbox_img_msg = None
         if self.pose_estimator is None:
             marker_message = rospy.wait_for_message(
                 self.marker_topic, MarkerArray, timeout=self.timeout)
@@ -136,9 +104,10 @@ class PerceptionModule(object):
             items = [DetectedItem.from_marker(marker)
                      for marker in marker_message.markers]
         else:
-            items = self.pose_estimator.detect_objects()
+            items, bbox_img_msg = self.pose_estimator.detect_objects(raw_img)
 
         # Get the transform from destination to detection frame
+        # print("self.destination_frame = ", self.destination_frame,  "self.detection_frame = ", self.detection_frame)
         frame_offset = get_transform_matrix(
             self.listener, self.destination_frame, self.detection_frame,
             self.timeout)
@@ -149,4 +118,4 @@ class PerceptionModule(object):
             item.frame_id = self.destination_frame
             markers += [self.marker_manager.item_to_marker(item)]
 
-        return markers
+        return markers, bbox_img_msg

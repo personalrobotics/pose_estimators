@@ -73,7 +73,7 @@ class MarkerManager(object):
         marker.color.r = self.color[1]
         marker.color.g = self.color[2]
         marker.color.b = self.color[3]
-        marker.lifetime = rospy.Duration(0)
+        marker.lifetime = rospy.Duration(20)
 
         for key in self.kwargs:
             if hasattr(marker, key):

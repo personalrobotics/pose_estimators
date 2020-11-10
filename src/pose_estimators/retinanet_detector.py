@@ -145,13 +145,13 @@ class RetinaNetDetector(PoseEstimator, CameraSubscriber, ImagePublisher):
             print('[retinanet_detector] no input RGB stream')
             return list()
 
-        if self.depth_img_msg is None:
+        if self.depth_img is None:
             print('[retinanet_detector] no input depth stream, assume depth=1')
-            self.depth_img_msg = np.ones(self.img_msg.shape[:2])
+            self.depth_img = np.ones(self.img_msg.shape[:2])
 
         copied_img_msg = self.img_msg.copy()
         img = PILImage.fromarray(copied_img_msg.copy())
-        depth_img = self.depth_img_msg.copy()
+        depth_img = self.depth_img.copy()
 
         width, height = img.size
 

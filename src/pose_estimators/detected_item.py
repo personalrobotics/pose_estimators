@@ -15,6 +15,7 @@ class DetectedItem(object):
                  db_key,
                  pose,
                  detected_time,
+                 bbox=[],
                  info_map=dict()):
         self.frame_id = frame_id
         self.marker_namespace = marker_namespace
@@ -23,6 +24,7 @@ class DetectedItem(object):
         self.detected_time = detected_time
         self.info_map = info_map
         self.info_map['db_key'] = db_key
+        self.bbox = bbox
 
     @classmethod
     def from_marker(cls, marker):
